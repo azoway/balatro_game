@@ -5,15 +5,22 @@
 
 /* ---------- 工具 ---------- */
 const $ = id => document.getElementById(id);
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+/* 计分期间点击屏幕可 4 倍速快进（G.speed） */
+const sleep = ms => new Promise(r => setTimeout(r, ms / (G.speed || 1)));
 const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
 const fmt = n => n >= 1e9 ? (n / 1e9).toFixed(2) + "e9" : n.toLocaleString("en-US");
 
 /* ---------- 音效 (WebAudio) ---------- */
 const AudioFX = (() => {
   let ctx = null;
-  const ac = () => (ctx ||= new (window.AudioContext || window.webkitAudioContext)());
+  let muted = false;
+  const ac = () => {
+    ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === "suspended") ctx.resume();   // 浏览器自动播放策略
+    return ctx;
+  };
   function tone(freq, dur, type = "sine", vol = .18, when = 0) {
+    if (muted) return;
     try {
       const c = ac(), o = c.createOscillator(), g = c.createGain();
       o.type = type; o.frequency.value = freq;
@@ -24,6 +31,8 @@ const AudioFX = (() => {
     } catch (e) { /* 忽略 */ }
   }
   return {
+    toggleMute: () => (muted = !muted),
+    isMuted: () => muted,
     select: () => tone(520, .08, "triangle", .12),
     deselect: () => tone(380, .08, "triangle", .1),
     chip: i => tone(600 + i * 90, .1, "square", .07),
@@ -162,8 +171,11 @@ const JOKER_DEFS = [
     desc: "回合结束时获得 $4",
     money: () => 4 },
   { id: "supernova", name: "超新星", icon: "💥", rarity: "uncommon", cost: 6,
-    desc: "本局该牌型每打出过 1 次 +1 倍率",
-    after: (s, g) => ({ mult: (g.handPlayCounts[s.type] || 0) }) },
+    desc: "本局该牌型之前每打出过 1 次 +1 倍率",
+    after: (s, g) => {
+      const n = (g.handPlayCounts[s.type] || 1) - 1;  // 不含本次
+      return n > 0 ? { mult: n } : null;
+    } },
   { id: "acrobat", name: "杂技演员", icon: "🤸", rarity: "uncommon", cost: 8,
     desc: "最后一次出牌时 ×3 倍率",
     after: (s, g) => g.handsLeft === 0 ? { xmult: 3 } : null },
@@ -195,7 +207,43 @@ const PLANETS = [
 /* ---------- 游戏状态 ---------- */
 const G = {};
 
-function newGame() {
+/* ---------- 存档 ---------- */
+const SAVE_KEY = "joker_save_v1";
+
+function saveGame() {
+  if (G.state === "over") { localStorage.removeItem(SAVE_KEY); return; }
+  try {
+    const data = {
+      money: G.money, ante: G.ante, round: G.round,
+      blindIndex: G.blindIndex, bossId: G.boss?.id,
+      jokers: G.jokers.map(j => ({ id: j.id, uid: j.uid, state: j.state })),
+      handLevels: G.handLevels, handPlayCounts: G.handPlayCounts,
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch (e) { /* 隐私模式等场景静默失败 */ }
+}
+
+function loadGame() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    if (typeof d.ante !== "number" || !Array.isArray(d.jokers)) return false;
+    newGameState();
+    G.money = d.money; G.ante = d.ante; G.round = d.round;
+    G.blindIndex = d.blindIndex ?? 0;
+    G.boss = BOSSES.find(b => b.id === d.bossId) || rnd(BOSSES);
+    G.jokers = d.jokers.filter(j => JOKER_DEFS.some(x => x.id === j.id));
+    Object.assign(G.handLevels, d.handLevels);
+    G.handPlayCounts = d.handPlayCounts || {};
+    showBlindSelect();
+    render();
+    flashMessage("📂 已恢复上局进度（回到盲注选择）");
+    return true;
+  } catch (e) { return false; }
+}
+
+function newGameState() {
   Object.assign(G, {
     deck: [], hand: [], selected: new Set(),
     jokers: [], maxJokers: 5,
@@ -209,9 +257,13 @@ function newGame() {
     handLevels: Object.fromEntries(Object.keys(HAND_TYPES).map(k => [k, 1])),
     handPlayCounts: {},
     shopStock: [], rerollCost: 5,
-    scoring: false,
+    scoring: false, speed: 1,
     state: "blind-select",
   });
+}
+
+function newGame() {
+  newGameState();
   pickBoss();
   showBlindSelect();
   render();
@@ -398,6 +450,7 @@ async function playHand() {
     return;
   }
   G.scoring = true;
+  G.speed = 1;
   G.handsLeft--;
   AudioFX.play();
 
@@ -480,15 +533,22 @@ async function playHand() {
 
   // Boss: 钩子
   if (G.currentBoss?.id === "hook") {
+    const hooked = [];
     for (let k = 0; k < 2 && G.hand.length; k++) {
       const idx = Math.floor(Math.random() * G.hand.length);
-      G.hand.splice(idx, 1);
+      hooked.push(...G.hand.splice(idx, 1));
+    }
+    // 与主动弃牌一致，触发小丑牌 onDiscard
+    for (const j of G.jokers) {
+      const def = JOKER_DEFS.find(d => d.id === j.id);
+      if (def.onDiscard) def.onDiscard(hooked, G, j);
     }
     flashMessage("🪝 钩子弃掉了你 2 张手牌!");
   }
 
   drawToFull();
   G.scoring = false;
+  G.speed = 1;
 
   // 胜负判定
   if (G.roundScore >= G.target) { await winRound(); return; }
@@ -522,6 +582,7 @@ function setCalc(chips, mult, bump) {
 
 async function countUp(from, to, dur) {
   const el = $("round-score");
+  dur = dur / (G.speed || 1);
   const start = performance.now();
   return new Promise(res => {
     function step(t) {
@@ -612,10 +673,16 @@ async function winRound() {
   for (const j of G.jokers) {
     const def = JOKER_DEFS.find(d => d.id === j.id);
     if (def.money) { const v = def.money(G, j); lines.push([`${def.icon} ${def.name}`, `$${v}`]); earn += v; }
-    if (def.roundEnd && def.roundEnd(G, j) === "destroy") {
-      flashMessage(`${def.icon} ${def.name} 被吃掉了!`);
-      G.jokers = G.jokers.filter(x => x !== j);
-    }
+  }
+  // 先收集再删除，避免遍历中修改数组
+  const destroyed = G.jokers.filter(j => {
+    const def = JOKER_DEFS.find(d => d.id === j.id);
+    return def.roundEnd && def.roundEnd(G, j) === "destroy";
+  });
+  for (const j of destroyed) {
+    const def = JOKER_DEFS.find(d => d.id === j.id);
+    flashMessage(`${def.icon} ${def.name} 被吃掉了!`);
+    G.jokers = G.jokers.filter(x => x !== j);
   }
   $("cashout-lines").innerHTML = lines.map(([a, b]) =>
     `<div class="co-line"><span>${a}</span><span class="co-val">${b}</span></div>`).join("");
@@ -633,6 +700,7 @@ async function winRound() {
     } else {
       G.blindIndex++;
     }
+    saveGame();
     openShop();
   };
   $("cashout").classList.remove("hidden");
@@ -708,6 +776,7 @@ function buyItem(item, price) {
     G.handLevels[item.def.hand]++;
     flashMessage(`${item.def.icon} ${HAND_TYPES[item.def.hand].name} 升到 Lv.${G.handLevels[item.def.hand]}!`);
   }
+  saveGame();
   renderShop(); render();
 }
 
@@ -720,6 +789,7 @@ function sellJoker(j) {
   AudioFX.money();
   flashMessage(`卖出 ${def.name} +$${v}`);
   hideTooltip();
+  saveGame();
   render();
   if (G.state === "shop") renderShop();
 }
@@ -727,6 +797,7 @@ function sellJoker(j) {
 /* ---------- 结束 ---------- */
 function gameOver(win) {
   G.state = "over";
+  localStorage.removeItem(SAVE_KEY);
   win ? AudioFX.win() : AudioFX.lose();
   if (win) confetti(220);
   $("end-title").textContent = win ? "🎉 通关胜利!" : "游戏结束";
@@ -837,9 +908,19 @@ function makeJokerEl(j, isShop = false) {
   el.innerHTML = `<div class="j-icon">${def.icon}</div><div class="j-name">${def.name}</div><div class="j-tag">${rarityName}</div>`;
   el.onmouseenter = e => showTooltip(e, def, isShop);
   el.onmousemove = e => moveTooltip(e);
-  el.onmouseleave = hideTooltip;
+  el.onmouseleave = () => { hideTooltip(); cancelSellConfirm(el); };
   attachTilt(el, 20);
-  if (!isShop) el.onclick = () => { if (confirm(`卖出 ${def.name} 得 $${Math.max(1, Math.floor(def.cost / 2))}？`)) sellJoker(j); };
+  // 双击确认出售（避免原生 confirm 阻塞动画）
+  if (!isShop) el.onclick = () => {
+    if (el.classList.contains("confirm-sell")) { sellJoker(j); return; }
+    document.querySelectorAll(".joker.confirm-sell").forEach(cancelSellConfirm);
+    el.classList.add("confirm-sell");
+    const badge = document.createElement("div");
+    badge.className = "sell-badge";
+    badge.textContent = `再点一次卖出 $${Math.max(1, Math.floor(def.cost / 2))}`;
+    el.appendChild(badge);
+    el._sellTimer = setTimeout(() => cancelSellConfirm(el), 2500);
+  };
   return el;
 }
 
@@ -860,6 +941,12 @@ function moveTooltip(e) {
   tt.style.left = x + "px"; tt.style.top = y + "px";
 }
 function hideTooltip() { $("tooltip").classList.add("hidden"); }
+
+function cancelSellConfirm(el) {
+  el.classList.remove("confirm-sell");
+  el.querySelector(".sell-badge")?.remove();
+  if (el._sellTimer) { clearTimeout(el._sellTimer); el._sellTimer = null; }
+}
 
 function renderJokers() {
   const box = $("jokers");
@@ -934,6 +1021,21 @@ $("discard-btn").onclick = discard;
 $("sort-rank").onclick = () => { sortHand("rank"); render(); };
 $("sort-suit").onclick = () => { sortHand("suit"); render(); };
 $("run-info-btn").onclick = showRunInfo;
+$("new-run-btn").onclick = () => {
+  // 双击确认，防误触丢档
+  const btn = $("new-run-btn");
+  if (btn.dataset.confirm) {
+    delete btn.dataset.confirm;
+    btn.textContent = "重新开局";
+    localStorage.removeItem(SAVE_KEY);
+    document.querySelectorAll(".overlay").forEach(o => o.classList.add("hidden"));
+    newGame();
+  } else {
+    btn.dataset.confirm = "1";
+    btn.textContent = "确认放弃本局?";
+    setTimeout(() => { delete btn.dataset.confirm; btn.textContent = "重新开局"; }, 2500);
+  }
+};
 $("close-info-btn").onclick = () => $("run-info").classList.add("hidden");
 $("reroll-btn").onclick = () => {
   if (G.money < G.rerollCost) return;
@@ -951,5 +1053,34 @@ $("restart-btn").onclick = () => {
   newGame();
 };
 
+/* 计分中点击任意处 → 4 倍速快进 */
+document.addEventListener("pointerdown", () => {
+  if (G.scoring && G.speed === 1) {
+    G.speed = 4;
+    flashMessage("⏩ 加速");
+  }
+});
+
+/* 键盘操作：1-9 选牌 / Enter 出牌 / X 弃牌 / R 点数排序 / S 花色排序 / M 静音 */
+document.addEventListener("keydown", e => {
+  if (e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (k === "m") {
+    const muted = AudioFX.toggleMute();
+    flashMessage(muted ? "🔇 已静音" : "🔊 声音开启");
+    return;
+  }
+  if (G.state !== "playing" || G.scoring) return;
+  if (/^[1-9]$/.test(k)) {
+    const c = G.hand[+k - 1];
+    if (c) toggleSelect(c);
+  } else if (e.key === "Enter") {
+    if (!$("play-btn").disabled) playHand();
+  } else if (k === "x") {
+    if (!$("discard-btn").disabled) discard();
+  } else if (k === "r") { sortHand("rank"); render(); }
+  else if (k === "s") { sortHand("suit"); render(); }
+});
+
 /* ---------- 启动 ---------- */
-newGame();
+if (!loadGame()) newGame();

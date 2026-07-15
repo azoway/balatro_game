@@ -204,6 +204,14 @@ body::after {
 }
 .small-btn:hover { filter: brightness(1.2); }
 
+.hotkeys {
+  font-size: 10px;
+  color: rgba(255,255,255,.35);
+  line-height: 1.5;
+  text-align: center;
+  padding: 2px 4px;
+}
+
 /* ===== 主区域 ===== */
 #main {
   flex: 1;
@@ -532,6 +540,27 @@ body::after {
 }
 .joker.legendary { box-shadow: 0 4px 6px rgba(0,0,0,.45), 0 0 14px rgba(200,110,255,.5); }
 .joker.triggered { animation: jokerTrigger .4s; }
+
+/* 双击卖出确认 */
+.joker.confirm-sell {
+  box-shadow: 0 0 0 3px var(--red), 0 0 16px rgba(244,68,62,.5);
+  animation: none;
+}
+.sell-badge {
+  position: absolute;
+  top: -26px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 5;
+  box-shadow: 0 2px 4px rgba(0,0,0,.4);
+}
 @keyframes jokerTrigger {
   0% { transform: scale(1); }
   40% { transform: scale(1.22) rotate(-4deg); box-shadow: 0 0 18px var(--gold); }
@@ -832,3 +861,39 @@ body::after {
 
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { background: #3a5a62; border-radius: 4px; }
+
+/* ===== 响应式：窄屏 ===== */
+@media (max-width: 980px) {
+  :root { --card-w: 66px; --card-h: 92px; }
+  body { overflow: auto; }
+  #game { flex-direction: column; height: auto; min-height: 100vh; }
+  #sidebar {
+    width: 100%;
+    min-width: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 3px solid rgba(0,0,0,.35);
+    gap: 8px;
+  }
+  #sidebar .panel { flex: 1 1 140px; }
+  .blind-panel { flex: 1 1 100%; }
+  #main { padding: 8px 10px; }
+  #joker-row { height: auto; }
+  #jokers { height: auto; min-height: 96px; overflow-x: auto; }
+  .joker, .empty-slot { width: 76px; height: 100px; }
+  .joker .j-icon { font-size: 26px; }
+  #hand { height: 128px; }
+  #hand .card { margin: 0 -20px; }
+  .card .pip-item { font-size: 14px; }
+  .card .corner { font-size: 13px; }
+  .card .corner small { font-size: 10px; }
+  .card .ace-pip { font-size: 34px; }
+  .card .face-art { font-size: 22px; }
+  .shop-box { min-width: 0; width: 94vw; padding: 14px; }
+  .btn { font-size: 16px; padding: 11px 22px; }
+  #blind-options { flex-direction: column; gap: 10px; max-height: 80vh; overflow-y: auto; }
+  .blind-option { width: 82vw; }
+  .total-burst .tb-total { font-size: 38px; }
+  .total-burst .tb-chips, .total-burst .tb-mult { font-size: 26px; }
+}
