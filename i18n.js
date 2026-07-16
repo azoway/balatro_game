@@ -149,6 +149,18 @@ const STR = {
   deck_hint_all:     { zh: "整局牌库 · 图标 = 增强", en: "Full run deck · icon = enhancement" },
   close_btn:         { zh: "返回", en: "Back" },
 
+  /* 成就 */
+  achievements_title:{ zh: "成就", en: "Achievements" },
+  achievement_unlocked: { zh: "成就解锁", en: "Achievement unlocked" },
+
+  /* 存档迁移 */
+  export_btn:        { zh: "导出进度", en: "Export save" },
+  import_btn:        { zh: "导入进度", en: "Import save" },
+  export_copied:     { zh: "📋 进度码已复制，在其他设备「导入进度」粘贴即可", en: "📋 Save code copied — paste it via \"Import save\" on another device" },
+  export_manual:     { zh: "复制此进度码:", en: "Copy this save code:" },
+  import_prompt:     { zh: "粘贴进度码（将覆盖当前进度与战绩）:", en: "Paste save code (overwrites current progress and stats):" },
+  import_bad:        { zh: "⚠ 进度码无效", en: "⚠ Invalid save code" },
+
   /* 图鉴 / 统计 */
   collection_title:  { zh: "图鉴 · 战绩", en: "Collection · Stats" },
   stats_line:        { zh: "局数 {0} · 通关 {1} · 最高底注 {2} · 最佳出牌 {3} · 图鉴 {4}/{5}",

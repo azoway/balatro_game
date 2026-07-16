@@ -1270,3 +1270,61 @@ body::after {
   font-size: 14px;
 }
 #share-btn { margin-top: 10px; }
+
+/* ===== 成就 ===== */
+#achievements-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 660px;
+  margin-bottom: 6px;
+}
+.cl-item.ach-on {
+  border-color: #f7d774;
+  background: rgba(120, 90, 10, .3);
+}
+
+/* ===== Boss 登场横幅 ===== */
+.boss-banner {
+  position: fixed;
+  top: 38%;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 0;
+  background: linear-gradient(90deg, transparent, rgba(90, 10, 40, .92) 20%, rgba(90, 10, 40, .92) 80%, transparent);
+  border-top: 2px solid rgba(255, 80, 120, .5);
+  border-bottom: 2px solid rgba(255, 80, 120, .5);
+  z-index: 220;
+  pointer-events: none;
+  animation: bossBanner 2.6s ease forwards;
+}
+.boss-banner .bb-icon { font-size: 44px; filter: drop-shadow(0 0 12px rgba(255,80,120,.8)); }
+.boss-banner .bb-name { font-size: 24px; font-weight: 900; letter-spacing: 3px; }
+.boss-banner .bb-desc { font-size: 13px; color: rgba(255,255,255,.8); margin-top: 3px; }
+@keyframes bossBanner {
+  0% { opacity: 0; transform: scaleY(.2); }
+  10% { opacity: 1; transform: scaleY(1); }
+  85% { opacity: 1; transform: scaleY(1); }
+  100% { opacity: 0; transform: scaleY(.4); }
+}
+@media (prefers-reduced-motion: reduce) { .boss-banner { animation: fadeIn .3s; } }
+
+/* ===== 大额得分冲击 ===== */
+.total-burst.big .tb-total { font-size: 54px; }
+.total-burst.huge .tb-total {
+  font-size: 72px;
+  text-shadow: 0 0 24px rgba(247, 215, 116, .95), 3px 4px 0 rgba(0,0,0,.55);
+}
+.total-burst.huge { animation-duration: 1.7s; }
+
+/* ===== 新购小丑入场 ===== */
+.joker.pop { animation: jokerPop .5s cubic-bezier(.2, 2.2, .4, 1); }
+@keyframes jokerPop {
+  0% { transform: scale(.2) rotate(-14deg); }
+  100% { transform: scale(1) rotate(0); }
+}

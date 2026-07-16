@@ -11,7 +11,17 @@ enableFastClock();
 const bot = makeBot(api);
 
 const N = Math.max(1, parseInt(process.argv[2] || "50", 10));
-const DECK_ID = process.argv[3] || "classic";
+const DECK_ID = (process.argv[3] || "classic").replace(/^--.*/, "") || "classic";
+
+/* --ante=100,300,... 覆盖底注目标曲线，用于 A/B 调参 */
+const anteArg = process.argv.find(a => a.startsWith("--ante="));
+if (anteArg) {
+  const curve = anteArg.slice(7).split(",").map(Number);
+  if (curve.length && curve.every(Number.isFinite)) {
+    api.ANTE_BASE.splice(0, api.ANTE_BASE.length, ...curve);
+    console.log("使用自定义曲线:", curve.join(", "));
+  }
+}
 
 (async () => {
   const runs = [];

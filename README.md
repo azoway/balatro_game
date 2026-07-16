@@ -2,7 +2,9 @@
 
 Balatro 风格的纯前端网页卡牌游戏，无任何依赖，打开 `index.html` 即玩。中/英双语（侧边栏切换）。支持 PWA：部署到 HTTPS 后可安装到桌面/手机并离线游玩。
 
-**在线试玩:** https://azoway.github.io/balatro_game/
+**在线试玩 / Play online:** https://azoway.github.io/balatro_game/
+
+> **English**: A Balatro-style roguelike deckbuilder in pure vanilla JS — zero dependencies, zero build step, just open `index.html`. Full English UI (toggle in the sidebar). Features: 12 poker hands incl. hidden ones, 50 Jokers across 6 mechanic classes (retriggers, scaling, held-in-hand, rule-benders, Blueprint copying, card growth), editions, tarot/spectral consumables that permanently sculpt your deck, booster packs, vouchers, 14 boss blinds, 5 starting decks, endless mode, daily runs, seeded share links (`?seed=…&deck=…`), achievements, collection & run history, offline PWA. Dev: `node test/test.js` (245 assertions incl. bot-driven full-run sims), `node test/balance.js` (win-rate / death-ante reports), `python3 test/e2e.py` (browser E2E).
 
 ## 玩法
 
@@ -16,8 +18,10 @@ Balatro 风格的纯前端网页卡牌游戏，无任何依赖，打开 `index.h
 - 卡牌增强 4 种：加成牌（+30 筹码）、倍率牌（+4 倍率）、钢铁牌（留在手中 ×1.5 倍率）、黄金牌（回合结束在手中 +$3）
 - 牌库整局持久，点击右下角「牌库」可随时查看整副牌的现状与增强
 - 金钱有利息（每 $5 得 $1，上限 $5，可用优惠券提到 $10）
-- 侧边栏「❓ 玩法说明」内置 4 页图文教程；关键节点（首次商店/目标塔罗/Boss）有一次性提示
+- 侧边栏「❓ 玩法说明」内置 4 页图文教程；关键节点（首次商店/目标塔罗/Boss）有一次性提示；Boss 开局有登场横幅
 - 结束画面可复制分享链接（`?seed=xxx&deck=yyy`），打开即复现同一局
+- 8 个成就（通关/全牌组/隐藏牌型/十万分/无尽12/图鉴/攒钱/传奇），图鉴页展示；「导出/导入进度」可跨设备迁移存档与战绩
+- 生成式 BGM（WebAudio 琶音，节奏随底注加快，无音频文件），`M` 键与音效一起静音
 
 ## 操作
 
@@ -58,6 +62,7 @@ jsconfig.json 编辑器智能提示配置（配合 engine.js 中的 JSDoc typede
 ```bash
 node test/test.js         # 回归测试：牌型/计分/塔罗/商店/存档迁移/SW资源校验 + 机器人整局模拟
 node test/balance.js 100  # 平衡报告：批量模拟输出胜率、死亡底注分布、小丑持有率
+node test/balance.js 100 classic --ante=100,300,800,...  # 覆盖目标曲线做 A/B 调参
 python3 test/e2e.py       # 浏览器 E2E（需 playwright + chromium-headless-shell）
 ```
 

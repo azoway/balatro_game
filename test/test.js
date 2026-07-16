@@ -58,9 +58,9 @@ assert(blindTarget(0) === 100, "底注1小盲目标100");
 assert(blindTarget(1) === 150, "底注1大盲目标150");
 assert(blindTarget(2) === 200, "底注1 Boss目标200");
 G.ante = 8;
-assert(blindTarget(0) === 35000, "底注8小盲目标35000");
+assert(blindTarget(0) === 26000, "底注8小盲目标26000");
 G.ante = 10;
-assert(blindTarget(0) === 125000, "底注10无尽增长 ×2.5: " + blindTarget(0));
+assert(blindTarget(0) === 105000, "底注10无尽增长 ×2.5: " + blindTarget(0));
 
 /* ---------- Boss 同局不重复 ---------- */
 newGameState(11);
@@ -326,6 +326,38 @@ assert(G.doubleTag === 1, "加倍标签生效");
 
 /* ---------- 帮助页 ---------- */
 assert(api.HELP_PAGES.length === 4 && api.HELP_PAGES.every(p => p.title.zh && p.title.en && p.body.zh && p.body.en), "帮助页 4 页双语齐全");
+
+/* ---------- 大数显示 ---------- */
+assert(api.fmt(1234) === "1,234", "fmt 千分位");
+assert(api.fmt(2.5e9) === "2.50B", "fmt 十亿级: " + api.fmt(2.5e9));
+assert(api.fmt(1.23e13) === "1.23e13", "fmt 科学计数: " + api.fmt(1.23e13));
+assert(api.fmt(Infinity) === "∞", "fmt 无穷");
+
+/* ---------- 成就 ---------- */
+localStorage.removeItem("joker_stats_v1");
+assert(api.ACHIEVEMENTS.length === 8, "8 个成就");
+assert(api.awardAchievement("big_hand") === true, "首次解锁成就");
+assert(api.awardAchievement("big_hand") === false, "重复解锁被拒");
+assert(loadStats().achievements.includes("big_hand"), "成就持久化");
+newGameState(41);
+G.deckId = "red"; G.ante = 9; G.endless = false;
+recordGameEnd(true);
+let ach = loadStats();
+assert(ach.achievements.includes("first_win") && ach.deckWins.red === true, "通关成就 + 牌组胜利记录");
+G.ante = 12; G.endless = true;
+recordGameEnd(false);
+assert(loadStats().achievements.includes("endless12"), "无尽底注12成就");
+G.money = 60; G.jokers = [];
+saveGame();
+assert(loadStats().achievements.includes("rich"), "$50 成就（saveGame 检查点）");
+G.jokers = [{ id: "canio", uid: "lg1" }];
+saveGame();
+assert(loadStats().achievements.includes("legendary"), "传奇小丑成就");
+G.jokers = [];
+markJokersSeen(JOKER_DEFS.map(d => d.id));
+assert(loadStats().achievements.includes("collector"), "图鉴集齐成就");
+localStorage.removeItem("joker_stats_v1");
+localStorage.removeItem("joker_save_v1");
 
 /* ---------- 持久化牌库 + 塔罗改牌 ---------- */
 newGameState(13);

@@ -64,11 +64,15 @@ function markJokersSeen(ids) {
   const s = loadStats();
   s.seenJokers = [...new Set([...(s.seenJokers || []), ...ids])];
   saveStats(s);
+  if (s.seenJokers.length >= JOKER_DEFS.length) awardAchievement("collector");
 }
 function recordGameEnd(win) {
   const s = loadStats();
   s.games = (s.games || 0) + 1;
-  if (win) s.wins = (s.wins || 0) + 1;
+  if (win) {
+    s.wins = (s.wins || 0) + 1;
+    s.deckWins = { ...(s.deckWins || {}), [G.deckId || "classic"]: true };
+  }
   s.bestAnte = Math.max(s.bestAnte || 0, G.endless ? G.ante : Math.min(G.ante, MAX_ANTE));
   if (G.bestHand) s.bestScore = Math.max(s.bestScore || 0, G.bestHand.total);
   s.history = [{
@@ -77,6 +81,25 @@ function recordGameEnd(win) {
     endless: !!G.endless, deck: G.deckId || "classic",
   }, ...(s.history || [])].slice(0, 10);
   saveStats(s);
+  if (win) {
+    awardAchievement("first_win");
+    if (DECKS.every(d => s.deckWins[d.id])) awardAchievement("all_decks");
+  }
+  if (G.ante >= 12) awardAchievement("endless12");
+}
+
+/* ---------- 成就 ---------- */
+function awardAchievement(id) {
+  const s = loadStats();
+  s.achievements = s.achievements || [];
+  if (s.achievements.includes(id)) return false;
+  s.achievements.push(id);
+  saveStats(s);
+  const def = ACHIEVEMENTS.find(a => a.id === id);
+  if (def && typeof flashMessage === "function") {
+    flashMessage(`🏆 ${S("achievement_unlocked")}: ${def.icon} ${L(def.name)}`);
+  }
+  return true;
 }
 
 /* ---------- 存档 ---------- */
@@ -84,6 +107,9 @@ const SAVE_KEY = "joker_save_v1";
 
 function saveGame() {
   if (G.state === "over") { localStorage.removeItem(SAVE_KEY); return; }
+  // 持有类成就的集中检查点（saveGame 在每次状态变化后都会调用）
+  if (G.money >= 50) awardAchievement("rich");
+  if (G.jokers?.some(j => JOKER_BY_ID.get(j.id)?.rarity === "legendary")) awardAchievement("legendary");
   try {
     const data = {
       v: 4,

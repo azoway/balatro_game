@@ -8,7 +8,13 @@
 const $ = id => document.getElementById(id);
 /* 计分期间点击屏幕可 4 倍速快进（G.speed） */
 const sleep = ms => new Promise(r => setTimeout(r, ms / (G.speed || 1)));
-const fmt = n => n >= 1e9 ? (n / 1e9).toFixed(2) + "e9" : n.toLocaleString("en-US");
+/* 大数显示：无尽模式后期分数可达 1e12+ */
+const fmt = n => {
+  if (!Number.isFinite(n)) return "∞";
+  if (n >= 1e12) return n.toExponential(2).replace("e+", "e");
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+  return n.toLocaleString("en-US");
+};
 
 /* 环境能力检测（测试环境无 matchMedia，一律回退 false） */
 const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia
@@ -37,7 +43,27 @@ const AudioFX = (() => {
       o.start(c.currentTime + when); o.stop(c.currentTime + when + dur);
     } catch (e) { /* 忽略 */ }
   }
+  /* 生成式 BGM：小调琶音 + 低音垫，节奏随底注加快；无音频文件，静音键统一控制 */
+  let musicTimer = null, mStep = 0;
+  const CHORDS = [[0, 3, 7], [-4, 0, 3], [3, 7, 10], [-2, 2, 5]];   // Am F C G
+  function startMusic() {
+    if (musicTimer) return;
+    const tick = () => {
+      const ante = (typeof G !== "undefined" && G.ante) || 1;
+      if (!muted && !(typeof document !== "undefined" && document.hidden)) {
+        const chord = CHORDS[Math.floor(mStep / 8) % CHORDS.length];
+        const deg = chord[Math.floor(Math.random() * chord.length)] + (Math.random() < .3 ? 12 : 0);
+        tone(220 * Math.pow(2, deg / 12), .38, "sine", .035);
+        if (mStep % 8 === 0) tone(110 * Math.pow(2, chord[0] / 12), 1.3, "triangle", .04);
+        mStep++;
+      }
+      musicTimer = setTimeout(tick, Math.max(170, 300 - Math.min(ante, 10) * 12));
+    };
+    tick();
+  }
+
   return {
+    startMusic,
     toggleMute: () => {
       muted = !muted;
       try { localStorage.setItem("joker_muted", muted ? "1" : "0"); } catch (e) { /* 忽略 */ }
@@ -118,6 +144,7 @@ function startBlind(idx) {
   let handSize = G.handSize;
   if (G.currentBoss) {
     AudioFX.boss();
+    showBossBanner(G.currentBoss);
     tipOnce("boss", "tip_boss");
     if (G.currentBoss.id === "manacle") handSize -= 1;
     if (G.currentBoss.id === "water") G.maxDiscards = 0;
@@ -185,6 +212,10 @@ async function playHand() {
   const sc = computeScoring(cards);
   if (!sc.allDebuffed && (!G.bestHand || sc.total > G.bestHand.total))
     G.bestHand = { type: sc.ev.type, total: sc.total };
+  if (!sc.allDebuffed) {
+    if (["five_kind", "flush_house", "flush_five"].includes(sc.ev.type)) awardAchievement("hidden_hand");
+    if (sc.total >= 100000) awardAchievement("big_hand");
+  }
 
   if (sc.allDebuffed) {
     $("hand-name").textContent = S("all_debuffed_name");
@@ -352,13 +383,22 @@ function flashMessage(msg) {
   setTimeout(() => el.remove(), 1800);
 }
 
-/* 总分爆发 */
+/* 总分爆发：大额得分有更强的视觉冲击 */
 function showTotalBurst(chips, mult, total) {
   const el = document.createElement("div");
-  el.className = "total-burst";
+  el.className = "total-burst" + (total >= 20000 ? " huge" : total >= 5000 ? " big" : "");
   el.innerHTML = `<span class="tb-chips">${fmt(Math.floor(chips))}</span><span class="tb-x">×</span><span class="tb-mult">${fmt(Math.round(mult * 100) / 100)}</span><span class="tb-eq">=</span><span class="tb-total">${fmt(total)}</span>`;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 1300);
+  setTimeout(() => el.remove(), total >= 5000 ? 1700 : 1300);
+}
+
+/* Boss 登场横幅 */
+function showBossBanner(boss) {
+  const el = document.createElement("div");
+  el.className = "boss-banner";
+  el.innerHTML = `<div class="bb-icon">${boss.icon}</div><div class="bb-text"><div class="bb-name">${L(boss.name)}</div><div class="bb-desc">${L(boss.desc)}</div></div>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), REDUCED_MOTION ? 1800 : 2600);
 }
 
 /* ---------- 弃牌 ---------- */
@@ -451,6 +491,7 @@ async function winRound() {
     // Boss 击败 → 下一底注
     if (G.blindIndex === 2) {
       G.ante++;
+      if (G.ante >= 12) awardAchievement("endless12");
       if (!G.endless && G.ante > MAX_ANTE) { gameOver(true); return; }
       G.blindIndex = 0;
       pickBoss();
@@ -534,7 +575,9 @@ function buyItem(item, price) {
   item.sold = true;
   AudioFX.buy();
   if (item.kind === "joker") {
-    G.jokers.push({ id: item.def.id, uid: "j" + Date.now() + Math.random().toString(36).slice(2, 5), ed: item.ed || undefined });
+    const uid = "j" + Date.now() + Math.random().toString(36).slice(2, 5);
+    G.jokers.push({ id: item.def.id, uid, ed: item.ed || undefined });
+    G._popUid = uid;   // 新买的小丑入场动效
   } else if (item.kind === "tarot" || item.kind === "spectral") {
     G.consumables.push({ id: item.def.id, uid: "t" + Date.now() + Math.random().toString(36).slice(2, 5) });
     if (item.def.targets) tipOnce("tarot", "tip_tarot");
@@ -724,6 +767,12 @@ function showCollection() {
   $("collection-grid").innerHTML = JOKER_DEFS.map(d => seen.has(d.id)
     ? `<div class="cl-item" title="${L(d.desc)}"><div class="cl-icon">${d.icon}</div><div class="cl-name">${L(d.name)}</div></div>`
     : `<div class="cl-item cl-unknown"><div class="cl-icon">❓</div><div class="cl-name">???</div></div>`).join("");
+  const unlocked = new Set(s.achievements || []);
+  $("achievements-grid").innerHTML = ACHIEVEMENTS.map(a => `
+    <div class="cl-item ${unlocked.has(a.id) ? "ach-on" : "cl-unknown"}" title="${L(a.desc)}">
+      <div class="cl-icon">${unlocked.has(a.id) ? a.icon : "🔒"}</div>
+      <div class="cl-name">${L(a.name)}</div>
+    </div>`).join("");
   const hist = s.history || [];
   $("run-history").innerHTML = hist.length
     ? hist.map(h => {
@@ -991,6 +1040,7 @@ function renderJokers() {
   G.jokers.forEach(j => {
     const el = makeJokerEl(j);
     if (j.uid === G.disabledJokerUid) el.classList.add("debuffed");
+    if (j.uid === G._popUid && !REDUCED_MOTION) { el.classList.add("pop"); G._popUid = null; }
     box.appendChild(el);
   });
   for (let i = G.jokers.length; i < G.maxJokers; i++) {
@@ -1131,6 +1181,37 @@ $("help-prev-btn").onclick = () => showHelp(_helpPage - 1);
 $("help-next-btn").onclick = () => showHelp(_helpPage + 1);
 $("share-btn").onclick = copyShareLink;
 $("close-collection-btn").onclick = () => $("collection").classList.add("hidden");
+/* 存档导出/导入：跨设备迁移进度（存档+统计+偏好打包 base64） */
+$("export-btn").onclick = async () => {
+  const data = {
+    save: localStorage.getItem(SAVE_KEY),
+    stats: localStorage.getItem(STATS_KEY),
+    lang: LANG,
+    muted: localStorage.getItem("joker_muted"),
+  };
+  const code = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+  try {
+    await navigator.clipboard.writeText(code);
+    flashMessage(S("export_copied"));
+  } catch (e) {
+    window.prompt?.(S("export_manual"), code);
+  }
+};
+$("import-btn").onclick = () => {
+  const v = typeof window.prompt === "function" ? window.prompt(S("import_prompt"), "") : null;
+  if (!v || !v.trim()) return;
+  try {
+    const data = JSON.parse(decodeURIComponent(escape(atob(v.trim()))));
+    if (!data || (typeof data.save !== "string" && typeof data.stats !== "string")) throw new Error("bad");
+    if (data.save) localStorage.setItem(SAVE_KEY, data.save);
+    if (data.stats) localStorage.setItem(STATS_KEY, data.stats);
+    if (data.lang) localStorage.setItem("joker_lang", data.lang);
+    if (data.muted != null) localStorage.setItem("joker_muted", data.muted);
+    if (typeof location !== "undefined" && location.reload) location.reload();
+  } catch (e) {
+    flashMessage(S("import_bad"));
+  }
+};
 bindConfirmButton($("new-run-btn"), "new_run_btn", () => showDeckSelect());
 bindConfirmButton($("daily-btn"), "daily_btn", () => showDeckSelect(todaySeed()));
 $("seed-line").onclick = () => {
@@ -1202,8 +1283,9 @@ document.addEventListener("click", e => {
   if (btn) btn.blur?.();
 });
 
-/* 计分中点击任意处 → 4 倍速快进；触屏点空白处收起 tooltip */
+/* 计分中点击任意处 → 4 倍速快进；触屏点空白处收起 tooltip；首次交互启动 BGM */
 document.addEventListener("pointerdown", e => {
+  AudioFX.startMusic();
   if (G.scoring && G.speed === 1) {
     G.speed = 4;
     flashMessage(S("accelerate"));

@@ -32,7 +32,9 @@ const HAND_TYPES = {
   high_card:      { name: { zh: "高牌",     en: "High Card" },       chips: 5,   mult: 1,  up: [10, 1] },
 };
 
-const ANTE_BASE = [100, 300, 800, 2000, 5000, 11000, 20000, 35000, 50000];
+/* 经 80 局×2 组机器人 A/B 对比调平的曲线（原 [.,.,.,2000,5000,11000,20000,35000,50000]
+   在底注 5 有 39% 的死亡尖峰）：相邻倍率平滑递减 3.0→1.6 */
+const ANTE_BASE = [100, 300, 800, 1800, 3800, 7500, 14000, 26000, 42000];
 const MAX_ANTE = 8;
 /* 无尽模式：超出 ANTE_BASE 后目标按此倍数逐级增长 */
 const ENDLESS_GROWTH = 2.5;
@@ -615,6 +617,34 @@ const SKIP_TAGS = [
   { id: "double_tag", icon: "♊",
     name: { zh: "加倍标签", en: "Double Tag" },
     apply: g => { g.doubleTag = (g.doubleTag || 0) + 1; return S("msg_tag_double"); } },
+];
+
+/* ---------- 成就 ---------- */
+const ACHIEVEMENTS = [
+  { id: "first_win", icon: "🏆",
+    name: { zh: "初次通关", en: "First Victory" },
+    desc: { zh: "击败全部 8 个底注", en: "Beat all 8 antes" } },
+  { id: "all_decks", icon: "🌈",
+    name: { zh: "全牌组制霸", en: "Deck Master" },
+    desc: { zh: "用全部 5 种牌组各通关一次", en: "Win with all 5 decks" } },
+  { id: "hidden_hand", icon: "🂠",
+    name: { zh: "隐藏牌型", en: "Secret Hand" },
+    desc: { zh: "打出五条 / 同花葫芦 / 同花五条", en: "Play Five of a Kind, Flush House or Flush Five" } },
+  { id: "big_hand", icon: "💥",
+    name: { zh: "十万暴击", en: "Six Figures" },
+    desc: { zh: "单次出牌得分 ≥ 100,000", en: "Score 100,000+ in a single hand" } },
+  { id: "endless12", icon: "♾️",
+    name: { zh: "无尽行者", en: "Endless Walker" },
+    desc: { zh: "无尽模式达到底注 12", en: "Reach Ante 12 in Endless mode" } },
+  { id: "collector", icon: "📚",
+    name: { zh: "图鉴大师", en: "Completionist" },
+    desc: { zh: "图鉴集齐全部小丑牌", en: "See every Joker in the collection" } },
+  { id: "rich", icon: "💰",
+    name: { zh: "富甲一方", en: "Money Bags" },
+    desc: { zh: "同时持有 $50", en: "Hold $50 at once" } },
+  { id: "legendary", icon: "🎪",
+    name: { zh: "传奇之主", en: "Legend Holder" },
+    desc: { zh: "拥有一张传奇小丑牌", en: "Own a Legendary Joker" } },
 ];
 
 /* ---------- 帮助页 ---------- */
