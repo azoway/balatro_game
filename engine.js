@@ -280,6 +280,8 @@ function isDebuffed(card) {
   return map[G.currentBoss.id] === card.suit;
 }
 
+const hasJoker = id => !!G.jokers && G.jokers.some(j => j.id === id);
+
 function evaluate(cards) {
   const active = cards.filter(c => !isDebuffed(c));
   const ranks = active.map(c => RANK_VAL[c.rank]);
@@ -287,17 +289,20 @@ function evaluate(cards) {
   ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
   const groups = Object.values(counts).sort((a, b) => b - a);
   const suits = new Set(active.map(c => c.suit));
-  const isFlush = active.length === 5 && suits.size === 1;
+  // 四指: 4 张即可组成同花/顺子；抄近路: 顺子允许跳 1 个点数
+  const minRun = hasJoker("four_fingers") ? 4 : 5;
+  const maxGap = hasJoker("shortcut") ? 2 : 1;
+  const isFlush = active.length >= minRun && suits.size === 1;
   let isStraight = false;
-  if (active.length === 5) {
+  if (active.length >= minRun && new Set(ranks).size === active.length) {
+    const runOk = u => u.every((v, i) => i === 0 || (v - u[i - 1] >= 1 && v - u[i - 1] <= maxGap));
     const u = [...new Set(ranks)].sort((a, b) => a - b);
-    if (u.length === 5) {
-      isStraight = u[4] - u[0] === 4 ||
-        (u.join() === "2,3,4,5,14");  // A-2-3-4-5
-    }
+    isStraight = runOk(u);
+    if (!isStraight && u[u.length - 1] === 14) isStraight = runOk([1, ...u.slice(0, -1)]);  // A 作 1
   }
   let type;
-  if (isFlush && groups[0] === 5) type = "flush_five";
+  if (groups[0] === 5) type = isFlush ? "flush_five" : "five_kind";
+  else if (isFlush && groups[0] === 3 && groups[1] === 2) type = "flush_house";
   else if (isFlush && isStraight) type = "straight_flush";
   else if (groups[0] === 4) type = "four_kind";
   else if (groups[0] === 3 && groups[1] === 2) type = "full_house";
@@ -308,9 +313,11 @@ function evaluate(cards) {
   else if (groups[0] === 2) type = "pair";
   else type = "high_card";
 
-  // 计分牌：组成牌型的牌（高牌只算最大那张）
+  // 计分牌：组成牌型的牌（高牌只算最大那张）；飞溅: 全部参与
   let scoringCards;
-  if (type === "high_card") {
+  if (hasJoker("splash")) {
+    scoringCards = active.slice();
+  } else if (type === "high_card") {
     const best = active.slice().sort((a, b) => RANK_VAL[b.rank] - RANK_VAL[a.rank])[0];
     scoringCards = best ? [best] : [];
   } else if (["pair", "two_pair", "three_kind", "four_kind", "full_house"].includes(type)) {
@@ -336,10 +343,24 @@ function handStats(type) {
   };
 }
 
+/* 蓝图解析：每个小丑的"有效计分定义"。copy:"right" 沿链取右侧第一个非复制小丑。
+   返回 [{ j: 原实例(动画/版本用), def: 有效定义, inst: 状态来源实例 }] */
+function scoringJokers(g) {
+  return g.jokers.map((j, i) => {
+    let idx = i, def = JOKER_BY_ID.get(g.jokers[idx].id), guard = 0;
+    while (def?.copy === "right" && guard++ <= g.jokers.length) {
+      idx++;
+      def = g.jokers[idx] ? JOKER_BY_ID.get(g.jokers[idx].id) : null;
+    }
+    if (def?.copy) def = null;   // 复制链没有落点
+    return { j, def, inst: g.jokers[idx] || j };
+  });
+}
+
 /* ---------- 纯函数计分 ----------
    不触碰 DOM / 音效 / 动画，返回完整的计分步骤序列，
    playHand 只负责按步骤播放，测试可直接断言 total。
-   顺序: 牌型基础 → 逐卡(含小丑 perCard) → 手中钢铁牌 → 小丑 after */
+   顺序: 牌型基础 → 逐卡(含重触发/小丑 perCard) → 手中牌(钢铁/heldCard 小丑) → 小丑版本+after */
 function computeScoring(cards, g = G) {
   const ev = evaluate(cards);
   const stats = handStats(ev.type);
@@ -349,9 +370,11 @@ function computeScoring(cards, g = G) {
   }
   const ctx = {
     type: ev.type, cards, playedCount: cards.length,
+    scoringCards: ev.scoringCards,
     hasPair: ev.hasPair, hasThree: ev.hasThree,
     firstFace: cards.find(c => ["J", "Q", "K"].includes(c.rank) && !isDebuffed(c)) || null,
   };
+  const sj = scoringJokers(g);
   let chips = stats.chips, mult = stats.mult;
   const steps = [];
   const applyEffect = (j, r) => {
@@ -363,36 +386,45 @@ function computeScoring(cards, g = G) {
   for (const c of ev.scoringCards) {
     // 重触发：每张牌的触发次数 = 1 + 各小丑的额外触发
     let triggers = 1;
-    for (const j of g.jokers) {
-      const def = JOKER_BY_ID.get(j.id);
-      if (def?.retrigger) triggers += def.retrigger(c, ctx, g, j) || 0;
+    for (const { def, inst } of sj) {
+      if (def?.retrigger) triggers += def.retrigger(c, ctx, g, inst) || 0;
     }
     for (let t = 0; t < triggers; t++) {
-      const add = CHIP_VAL(c.rank) + (c.enh === "bonus" ? ENH_CHIPS : 0);
+      const add = CHIP_VAL(c.rank) + (c.enh === "bonus" ? ENH_CHIPS : 0) + (c.perm || 0);
       chips += add;
       const enhMult = c.enh === "mult" ? ENH_MULT : 0;
       if (enhMult) mult += enhMult;
       steps.push({ kind: "card", card: c, add, enhMult, chips, mult, again: t > 0 });
-      for (const j of g.jokers) {
-        const def = JOKER_BY_ID.get(j.id);
+      for (const { j, def, inst } of sj) {
         if (!def?.perCard) continue;
-        const r = def.perCard(c, ctx, g, j);
+        const r = def.perCard(c, ctx, g, inst);
         if (r) applyEffect(j, r);
       }
     }
   }
-  // 手中钢铁牌（未打出、留在手里的）
-  for (const hc of g.hand.filter(c => c.enh === "steel")) {
-    mult = Math.round(mult * ENH_STEEL_X * 100) / 100;
-    steps.push({ kind: "held", card: hc, xmult: ENH_STEEL_X, chips, mult });
+  // 手中牌（未打出、留在手里的）：钢铁牌 + 持有类小丑（男爵/射月）
+  for (const hc of g.hand) {
+    if (hc.enh === "steel") {
+      mult = Math.round(mult * ENH_STEEL_X * 100) / 100;
+      steps.push({ kind: "held", card: hc, xmult: ENH_STEEL_X, chips, mult });
+    }
+    for (const { j, def, inst } of sj) {
+      if (!def?.heldCard) continue;
+      const r = def.heldCard(hc, g, inst);
+      if (r) {
+        if (r.chips) chips += r.chips;
+        if (r.mult) mult += r.mult;
+        if (r.xmult) mult = Math.round(mult * r.xmult * 100) / 100;
+        steps.push({ kind: "heldJoker", joker: j, card: hc, effect: r, chips, mult });
+      }
+    }
   }
-  for (const j of g.jokers) {
-    // 版本效果先于该小丑自身效果（排序影响 ×倍率收益）
+  for (const { j, def, inst } of sj) {
+    // 版本效果先于该小丑自身效果（排序影响 ×倍率收益）；版本属于小丑本体，蓝图不复制
     const ed = j.ed && EDITIONS[j.ed];
     if (ed) applyEffect(j, ed.effect);
-    const def = JOKER_BY_ID.get(j.id);
     if (!def?.after) continue;
-    const r = def.after(ctx, g, j);
+    const r = def.after(ctx, g, inst);
     if (r) applyEffect(j, r);
   }
   return { ev, stats, ctx, steps, chips, mult, total: Math.floor(chips * mult), allDebuffed: false };

@@ -19,6 +19,8 @@ const CHIP_VAL = r => r === "A" ? 11 : (RANK_VAL[r] >= 11 ? 10 : RANK_VAL[r]);
 
 const HAND_TYPES = {
   flush_five:     { name: { zh: "同花五条", en: "Flush Five" },      chips: 160, mult: 16, up: [50, 3] },
+  flush_house:    { name: { zh: "同花葫芦", en: "Flush House" },     chips: 140, mult: 14, up: [40, 4] },
+  five_kind:      { name: { zh: "五条",     en: "Five of a Kind" },  chips: 120, mult: 12, up: [35, 3] },
   straight_flush: { name: { zh: "同花顺",   en: "Straight Flush" },  chips: 100, mult: 8,  up: [40, 4] },
   four_kind:      { name: { zh: "四条",     en: "Four of a Kind" },  chips: 60,  mult: 7,  up: [30, 3] },
   full_house:     { name: { zh: "葫芦",     en: "Full House" },      chips: 40,  mult: 4,  up: [25, 2] },
@@ -276,6 +278,59 @@ const JOKER_DEFS = [
     desc: { zh: "每次商店刷新 +2 倍率", en: "+2 Mult per shop reroll" },
     after: (s, g, j) => (j.state || 0) > 0 ? { mult: j.state } : null,
     onReroll: (g, j) => { j.state = (j.state || 0) + 2; } },
+
+  /* --- 点数价值类 --- */
+  { id: "scholar", icon: "🎓", rarity: "common", cost: 4,
+    name: { zh: "学者", en: "Scholar" },
+    desc: { zh: "打出的每张 A +20 筹码 +4 倍率", en: "Played Aces give +20 Chips and +4 Mult" },
+    perCard: c => c.rank === "A" ? { chips: 20, mult: 4 } : null },
+  { id: "walkie_talkie", icon: "📻", rarity: "common", cost: 4,
+    name: { zh: "对讲机", en: "Walkie Talkie" },
+    desc: { zh: "打出的每张 10 或 4 +10 筹码 +4 倍率", en: "Each played 10 or 4 gives +10 Chips and +4 Mult" },
+    perCard: c => c.rank === "10" || c.rank === "4" ? { chips: 10, mult: 4 } : null },
+
+  /* --- 手中持有类: heldCard(card, g, j) 对回合中留在手里的每张牌调用 --- */
+  { id: "baron", icon: "🎩", rarity: "rare", cost: 10,
+    name: { zh: "男爵", en: "Baron" },
+    desc: { zh: "手中持有的每张 K ×1.5 倍率", en: "Each King held in hand gives ×1.5 Mult" },
+    heldCard: c => c.rank === "K" ? { xmult: 1.5 } : null },
+  { id: "shoot_the_moon", icon: "🌛", rarity: "common", cost: 5,
+    name: { zh: "射月", en: "Shoot the Moon" },
+    desc: { zh: "手中持有的每张 Q +13 倍率", en: "Each Queen held in hand gives +13 Mult" },
+    heldCard: c => c.rank === "Q" ? { mult: 13 } : null },
+  { id: "raised_fist", icon: "✊", rarity: "common", cost: 4,
+    name: { zh: "高举拳头", en: "Raised Fist" },
+    desc: { zh: "手中最小点数牌的点数 ×2 加到倍率", en: "Adds double the rank of your lowest held card to Mult" },
+    after: (s, g) => {
+      if (!g.hand.length) return null;
+      const low = Math.min(...g.hand.map(c => RANK_VAL[c.rank]));
+      return { mult: low * 2 };
+    } },
+
+  /* --- 牌型规则类（改变判定，engine.evaluate 读取） --- */
+  { id: "four_fingers", icon: "🖐", rarity: "uncommon", cost: 7,
+    name: { zh: "四指", en: "Four Fingers" },
+    desc: { zh: "只需 4 张牌即可组成同花和顺子", en: "Flushes and Straights can be made with 4 cards" } },
+  { id: "shortcut", icon: "🪜", rarity: "uncommon", cost: 7,
+    name: { zh: "抄近路", en: "Shortcut" },
+    desc: { zh: "顺子允许跳过 1 个点数（如 2,4,6,8,10）", en: "Straights may skip one rank (e.g. 2,4,6,8,10)" } },
+  { id: "splash", icon: "💦", rarity: "common", cost: 4,
+    name: { zh: "飞溅", en: "Splash" },
+    desc: { zh: "打出的每张牌都参与计分", en: "Every played card counts in scoring" } },
+
+  /* --- 复制类 --- */
+  { id: "blueprint", icon: "📐", rarity: "rare", cost: 12,
+    name: { zh: "蓝图", en: "Blueprint" },
+    desc: { zh: "复制右侧小丑牌的计分效果", en: "Copies the scoring ability of the Joker to its right" },
+    copy: "right" },
+
+  /* --- 卡牌成长类 --- */
+  { id: "hiker", icon: "🥾", rarity: "uncommon", cost: 6,
+    name: { zh: "徒步者", en: "Hiker" },
+    desc: { zh: "每张计分的牌永久 +5 筹码", en: "Each scored card permanently gains +5 Chips" },
+    onPlay: (s, g, j) => {
+      (s.scoringCards || s.cards).forEach(c => applyCardMod(c.id, x => x.perm = (x.perm || 0) + 5));
+    } },
 ];
 const JOKER_BY_ID = new Map(JOKER_DEFS.map(d => [d.id, d]));
 const sellValue = def => Math.max(1, Math.floor(def.cost / 2));
@@ -291,6 +346,9 @@ const PLANETS = [
   { id: "earth",   icon: "🌍", name: { zh: "地球",   en: "Earth" },   hand: "full_house" },
   { id: "mars",    icon: "🔴", name: { zh: "火星",   en: "Mars" },    hand: "four_kind" },
   { id: "neptune", icon: "🔵", name: { zh: "海王星", en: "Neptune" }, hand: "straight_flush" },
+  { id: "planetx", icon: "🪩", name: { zh: "行星X",  en: "Planet X" }, hand: "five_kind" },
+  { id: "ceres",   icon: "⚪", name: { zh: "谷神星", en: "Ceres" },   hand: "flush_house" },
+  { id: "eris",    icon: "🟣", name: { zh: "阋神星", en: "Eris" },    hand: "flush_five" },
 ];
 
 /* ---------- 塔罗牌 ----------

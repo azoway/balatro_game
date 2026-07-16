@@ -202,13 +202,21 @@ async function playHand() {
         }
         setCalc(step.chips, step.mult, "chips");
         await sleep(260);
-      } else if (step.kind === "held") {
-        // 手中钢铁牌
+      } else if (step.kind === "held" || step.kind === "heldJoker") {
+        // 手中牌触发：钢铁牌 或 持有类小丑（男爵/射月）
         const el = $("hand").querySelector?.(`[data-cid="${step.card.id}"]`);
         if (el) {
           el.classList.add("scoring");
-          floatText(el, `×${step.xmult}`, "mult");
+          const r = step.effect || { xmult: step.xmult };
+          floatText(el, r.xmult ? `×${r.xmult}` : r.mult ? `+${r.mult} ${S("mult_word")}` : `+${r.chips}`, r.chips ? "chips" : "mult");
           setTimeout(() => el.classList.remove("scoring"), 420);
+        }
+        if (step.kind === "heldJoker") {
+          const jokerEl = document.querySelector(`[data-jid="${step.joker.uid}"]`);
+          if (jokerEl) {
+            jokerEl.classList.add("triggered");
+            setTimeout(() => jokerEl.classList.remove("triggered"), 420);
+          }
         }
         AudioFX.joker();
         setCalc(step.chips, step.mult, "mult");
@@ -671,7 +679,7 @@ function showDeckView() {
       <span class="dv-suit ${red ? "dv-red" : ""}">${s}<small>×${cards.length}</small></span>
       <div class="dv-cards">${cards.map(c =>
         `<span class="dv-card ${red ? "dv-red" : ""}${inDeck && !inDeck.has(c.id) ? " dv-used" : ""}${c.enh ? " dv-enh" : ""}"
-          title="${c.enh ? L(ENH[c.enh].name) + ": " + L(ENH[c.enh].desc) : ""}">${c.rank}${c.enh ? `<i>${ENH[c.enh].icon}</i>` : ""}</span>`).join("")}
+          title="${[c.enh ? L(ENH[c.enh].name) + ": " + L(ENH[c.enh].desc) : "", c.perm ? `+${c.perm} ${S("chips_word")}` : ""].filter(Boolean).join(" · ")}">${c.rank}${c.enh ? `<i>${ENH[c.enh].icon}</i>` : ""}${c.perm ? `<b>+${c.perm}</b>` : ""}</span>`).join("")}
       </div></div>`;
   }).join("");
   $("deck-view-hint").textContent = G.state === "playing" ? S("deck_hint_playing") : S("deck_hint_all");
@@ -782,6 +790,8 @@ function makeCardEl(c) {
     el.classList.add(`enh-${c.enh}`);
     enhMark = `<div class="enh-mark" title="${L(ENH[c.enh].name)}: ${L(ENH[c.enh].desc)}">${ENH[c.enh].icon}</div>`;
   }
+  // 永久成长筹码（徒步者等）
+  if (c.perm) enhMark += `<div class="perm-mark" title="+${c.perm} ${S("chips_word")}">+${c.perm}</div>`;
   el.innerHTML = corners + center + enhMark + `<div class="card-gloss"></div>`;
   return el;
 }

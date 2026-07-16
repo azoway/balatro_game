@@ -1210,3 +1210,19 @@ body::after {
   .dv-card { min-width: 20px; height: 26px; font-size: 11px; }
   .cl-item { width: 70px; }
 }
+
+/* ===== 永久成长筹码标记（徒步者） ===== */
+.perm-mark {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  font-size: 9px;
+  font-weight: 900;
+  color: #0092e0;
+  background: rgba(255,255,255,.85);
+  border-radius: 6px;
+  padding: 0 4px;
+  z-index: 3;
+  pointer-events: none;
+}
+.dv-card b { position: absolute; top: -6px; left: -4px; font-size: 8px; color: #0092e0; }

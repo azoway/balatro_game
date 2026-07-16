@@ -159,6 +159,72 @@ for (let i = 0; i < 200; i++) {
 }
 assert(edOk, "版本掉落值合法");
 
+/* ---------- 新牌型: 五条 / 同花葫芦 ---------- */
+newGameState(7);
+assert(evaluate([c("7","♠"),c("7","♥"),c("7","♦"),c("7","♣"),c("7","♠")]).type === "five_kind", "五条(混花色)");
+assert(evaluate([c("7","♥"),c("7","♥"),c("7","♥"),c("7","♥"),c("7","♥")]).type === "flush_five", "同花五条优先于五条");
+assert(evaluate([c("7","♥"),c("7","♥"),c("7","♥"),c("K","♥"),c("K","♥")]).type === "flush_house", "同花葫芦");
+assert(evaluate([c("7","♥"),c("7","♠"),c("7","♥"),c("K","♥"),c("K","♥")]).type === "full_house", "混花色仍是普通葫芦");
+sc = computeScoring([c("7","♠"),c("7","♥"),c("7","♦"),c("7","♣"),c("7","♠")]);
+assert(sc.total === (120 + 7 * 5) * 12, "五条计分 120+35 ×12: " + sc.total);
+assert(api.PLANETS.length === 12 && Object.keys(HAND_TYPES).every(h => api.PLANETS.some(p => p.hand === h)), "12张星球牌覆盖全部牌型");
+
+/* ---------- 牌型规则小丑: 四指 / 抄近路 / 飞溅 ---------- */
+const flush4 = [c("2","♠"),c("5","♠"),c("9","♠"),c("K","♠")];
+assert(evaluate(flush4).type === "high_card", "无四指: 4张同花不成立");
+G.jokers = [{ id: "four_fingers", uid: "ff" }];
+assert(evaluate(flush4).type === "flush", "四指: 4张同花成立");
+assert(evaluate([c("3","♠"),c("4","♥"),c("5","♦"),c("6","♣")]).type === "straight", "四指: 4张顺子成立");
+G.jokers = [{ id: "shortcut", uid: "sc" }];
+assert(evaluate([c("2","♠"),c("4","♥"),c("6","♦"),c("8","♣"),c("10","♠")]).type === "straight", "抄近路: 跳点顺子");
+assert(evaluate([c("2","♠"),c("5","♥"),c("6","♦"),c("8","♣"),c("10","♠")]).type === "high_card", "抄近路: 跳2点不成立");
+G.jokers = [{ id: "splash", uid: "sp" }];
+let evSplash = evaluate([c("7","♠"),c("7","♥"),c("2","♦"),c("3","♣"),c("9","♠")]);
+assert(evSplash.type === "pair" && evSplash.scoringCards.length === 5, "飞溅: 全部5张参与计分");
+G.jokers = [];
+
+/* ---------- 蓝图复制 ---------- */
+G.jokers = [{ id: "blueprint", uid: "bp" }, { id: "joker", uid: "jk" }];
+sc = computeScoring([c("7","♠"), c("7","♥")]);
+assert(sc.total === (10 + 14) * (2 + 4 + 4), "蓝图复制右侧+4倍率: " + sc.total);
+G.jokers = [{ id: "joker", uid: "jk" }, { id: "blueprint", uid: "bp" }];
+sc = computeScoring([c("7","♠"), c("7","♥")]);
+assert(sc.total === (10 + 14) * (2 + 4), "蓝图右侧无小丑则无效果: " + sc.total);
+G.jokers = [{ id: "blueprint", uid: "b1" }, { id: "blueprint", uid: "b2" }, { id: "joker", uid: "jk" }];
+sc = computeScoring([c("7","♠"), c("7","♥")]);
+assert(sc.total === (10 + 14) * (2 + 12), "蓝图链式复制: " + sc.total);
+G.jokers = [];
+
+/* ---------- 持有类小丑: 男爵 / 射月 / 高举拳头 ---------- */
+G.jokers = [{ id: "baron", uid: "ba" }];
+G.hand = [c("K","♠"), c("K","♥"), c("2","♦")];
+sc = computeScoring([c("7","♥")]);
+// 高牌基础5 + 卡7 = 12 筹码, 倍率 1×1.5×1.5 = 2.25
+assert(sc.total === Math.floor((5 + 7) * 2.25), "男爵: 手中2张K ×1.5×1.5: " + sc.total);
+assert(sc.steps.filter(s => s.kind === "heldJoker").length === 2, "男爵产生2个 heldJoker 步骤");
+G.jokers = [{ id: "shoot_the_moon", uid: "sm" }];
+G.hand = [c("Q","♠")];
+sc = computeScoring([c("7","♥")]);
+assert(sc.total === (5 + 7) * (1 + 13), "射月: 手中Q +13倍率: " + sc.total);
+G.jokers = [{ id: "raised_fist", uid: "rf" }];
+G.hand = [c("3","♠"), c("K","♥")];
+sc = computeScoring([c("7","♥")]);
+assert(sc.total === (5 + 7) * (1 + 6), "高举拳头: 最小点数3 ×2 加倍率: " + sc.total);
+G.jokers = []; G.hand = [];
+
+/* ---------- 徒步者: 计分牌永久成长 ---------- */
+newGameState(23);
+const hikerJ = { id: "hiker", uid: "hk" };
+const defHiker = JOKER_DEFS.find(d => d.id === "hiker");
+const permCard = G.masterDeck[0];
+G.hand = [];
+defHiker.onPlay({ cards: [permCard], scoringCards: [permCard] }, G, hikerJ);
+defHiker.onPlay({ cards: [permCard], scoringCards: [permCard] }, G, hikerJ);
+assert(G.masterDeck[0].perm === 10, "徒步者: 母牌库永久 +10 筹码");
+sc = computeScoring([{ ...G.masterDeck[0] }]);
+const baseChip = (r => r === "A" ? 11 : (api.RANK_VAL[r] >= 11 ? 10 : api.RANK_VAL[r]))(G.masterDeck[0].rank);
+assert(sc.total === (5 + baseChip + 10) * 1, "永久筹码参与计分: " + sc.total);
+
 /* ---------- 起始牌组 ---------- */
 newGame(1, "red");
 assert(G.bonusDiscards === 1 && G.deckId === "red", "红牌组 +1 弃牌");

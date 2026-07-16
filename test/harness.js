@@ -48,7 +48,7 @@ function compileGame() {
   let src = SOURCES.map(f => fs.readFileSync(path.join(ROOT, f), "utf8")).join("\n");
   src += `\nmodule.exports = { G, evaluate, playHand, startBlind, discard, JOKER_DEFS, JOKER_BY_ID,
     rollShop, rollEdition, buyItem, computeScoring, newGameState, newGame, skipBlind, blindTarget,
-    seedRNG, rng, buildDeck, TAROTS, TAROT_BY_ID, BOSSES, PACKS, VOUCHERS, EDITIONS, DECKS,
+    seedRNG, rng, buildDeck, TAROTS, TAROT_BY_ID, BOSSES, PACKS, VOUCHERS, EDITIONS, DECKS, PLANETS,
     saveGame, loadGame, useConsumable, applyCardMod, pickBoss, openPack, choosePackOption, skipPack,
     loadStats, recordGameEnd, markJokersSeen, RANK_VAL, HAND_TYPES,
     ENH_CHIPS, ENH_MULT, ENH_STEEL_X, S, L };`;
