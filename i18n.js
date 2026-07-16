@@ -66,7 +66,7 @@ const STR = {
   round_won_title:   { zh: "回合胜利!", en: "Round won!" },
   defeat_word:       { zh: "击败", en: "Defeated" },
   hands_left_bonus:  { zh: "剩余出牌次数", en: "Remaining hands" },
-  interest_line:     { zh: "利息 (每$5得$1, 上限${0})", en: "Interest ($1 per $5, cap ${0})" },
+  interest_line:     { zh: "利息 (每${1}得$1, 上限${0})", en: "Interest ($1 per ${1}, cap ${0})" },
   gold_cards_line:   { zh: "💰 手中黄金牌 ×{0}", en: "💰 Gold cards in hand ×{0}" },
   eaten_flash:       { zh: "{0} 被吃掉了!", en: "{0} was eaten!" },
   cashout_collect:   { zh: "收取", en: "Cash out" },

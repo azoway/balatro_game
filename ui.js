@@ -97,7 +97,7 @@ function showBlindSelect() {
       <div class="bo-name ${m.cls}" style="background:${["#006bb8", "#d07f1d", "#7a1fa0"][i]}">${isBoss ? (G.boss.icon + " " + L(G.boss.name)) : L(m.name)}</div>
       <div class="bo-chip">${isBoss ? G.boss.icon : (i === 0 ? "🔵" : "🟠")}</div>
       <div class="bo-target">${fmt(blindTarget(i))}</div>
-      <div class="bo-reward">${S("reward_word")} ${"$".repeat(m.reward)}</div>
+      <div class="bo-reward">${S("reward_word")} ${"$".repeat(BALANCE.blindRewards[i])}</div>
       <div class="bo-effect">${isBoss ? L(G.boss.desc) : ""}</div>
       ${i < G.blindIndex
         ? `<div class="bo-done-mark">${S("done_mark")}</div>`
@@ -139,8 +139,8 @@ function startBlind(idx) {
   G.round++;
   G.roundScore = 0;
   G.target = blindTarget(idx);
-  G.maxHands = 4 + G.bonusHands;
-  G.maxDiscards = 3 + G.bonusDiscards;
+  G.maxHands = BALANCE.baseHands + G.bonusHands;
+  G.maxDiscards = BALANCE.baseDiscards + G.bonusDiscards;
   let handSize = G.handSize;
   if (G.currentBoss) {
     AudioFX.boss();
@@ -447,12 +447,13 @@ async function winRound() {
   render();
   await sleep(600);
   const m = BLIND_META[G.blindIndex];
+  const reward = BALANCE.blindRewards[G.blindIndex];
   const lines = [];
-  let earn = m.reward;
-  lines.push([`${S("defeat_word")} ${G.blindIndex === 2 ? L(G.boss.name) : L(m.name)}`, `$${m.reward}`]);
+  let earn = reward;
+  lines.push([`${S("defeat_word")} ${G.blindIndex === 2 ? L(G.boss.name) : L(m.name)}`, `$${reward}`]);
   if (G.handsLeft > 0) { lines.push([`${S("hands_left_bonus")} ×${G.handsLeft}`, `$${G.handsLeft}`]); earn += G.handsLeft; }
-  const interest = Math.min(G.interestCap, Math.floor(G.money / 5));
-  if (interest > 0) { lines.push([S("interest_line", G.interestCap), `$${interest}`]); earn += interest; }
+  const interest = Math.min(G.interestCap, Math.floor(G.money / BALANCE.interestRate));
+  if (interest > 0) { lines.push([S("interest_line", G.interestCap, BALANCE.interestRate), `$${interest}`]); earn += interest; }
   // 投资标签：击败 Boss 兑现
   if (G.blindIndex === 2 && G.investment > 0) {
     const v = 15 * G.investment;
@@ -506,7 +507,7 @@ async function winRound() {
 
 function openShop() {
   G.state = "shop";
-  G.rerollCost = G.vouchers.includes("clearance") ? 3 : 5;
+  G.rerollCost = G.vouchers.includes("clearance") ? BALANCE.rerollClearance : BALANCE.rerollBase;
   rollShop();
   renderShop();
   $("shop").classList.remove("hidden");
@@ -1066,7 +1067,7 @@ function renderStats() {
   $("blind-chip").className = "blind-chip " + m.chip;
   $("blind-chip").textContent = isBoss ? G.boss.icon : "";
   $("blind-target").textContent = fmt(G.state === "playing" ? G.target : blindTarget(G.blindIndex));
-  $("blind-reward").textContent = S("reward_word") + " " + "$".repeat(m.reward);
+  $("blind-reward").textContent = S("reward_word") + " " + "$".repeat(BALANCE.blindRewards[G.blindIndex] || 3);
   const eff = $("blind-effect");
   if (isBoss) { eff.textContent = L(G.boss.desc); eff.classList.remove("hidden"); }
   else eff.classList.add("hidden");

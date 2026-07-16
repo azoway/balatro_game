@@ -36,8 +36,29 @@ const HAND_TYPES = {
    在底注 5 有 39% 的死亡尖峰）：相邻倍率平滑递减 3.0→1.6 */
 const ANTE_BASE = [100, 300, 800, 1800, 3800, 7500, 14000, 26000, 42000];
 const MAX_ANTE = 8;
-/* 无尽模式：超出 ANTE_BASE 后目标按此倍数逐级增长 */
-const ENDLESS_GROWTH = 2.5;
+
+/* ---------- 可调平衡参数 ----------
+   全部集中于此，test/balance.js 可用 --set key=value 覆盖后批量仿真做 A/B。
+   boss 目标倍率按 Boss 单独可调（针头只能出 1 次牌，目标相应降低）。 */
+const BALANCE = {
+  startMoney: 4,
+  baseHands: 4,
+  baseDiscards: 3,
+  handSize: 8,
+  interestRate: 5,        // 每 $N 得 $1 利息
+  interestCap: 5,
+  blindRewards: [3, 4, 5],
+  rerollBase: 5,
+  rerollClearance: 3,     // 清仓甩卖优惠券后的刷新起价
+  bigBlindMult: 1.5,
+  bossMult: 2,
+  /* 个别 Boss 的目标倍率：针头只能出 1 次牌，目标不加倍（400 局数据显示 ×2 时
+     其击杀率 38.7%，为其余 Boss 中位数的 3 倍） */
+  bossMultOverride: { wall: 4, needle: 1 },
+  endlessGrowth: 2.5,     // 无尽模式逐底注增速
+  rarityWeights: { common: 12, uncommon: 5, rare: 2, legendary: 1 },
+  spectralChance: 0.15,   // 商店塔罗位变幻灵牌的概率
+};
 
 /* ---------- 卡牌增强 ---------- */
 const ENH_CHIPS = 30;      // 加成牌：计分时额外筹码
@@ -94,11 +115,11 @@ const BOSSES = [
     desc: { zh: "每次出牌随机禁用一张小丑牌", en: "One random Joker is disabled every hand" } },
 ];
 
-/* ---------- 盲注元数据 ---------- */
+/* ---------- 盲注元数据（奖励金额见 BALANCE.blindRewards） ---------- */
 const BLIND_META = [
-  { name: { zh: "小盲注", en: "Small Blind" }, cls: "", chip: "", reward: 3 },
-  { name: { zh: "大盲注", en: "Big Blind" }, cls: "big-blind", chip: "big", reward: 4 },
-  { name: { zh: "Boss盲注", en: "Boss Blind" }, cls: "boss-blind", chip: "boss", reward: 5 },
+  { name: { zh: "小盲注", en: "Small Blind" }, cls: "", chip: "" },
+  { name: { zh: "大盲注", en: "Big Blind" }, cls: "big-blind", chip: "big" },
+  { name: { zh: "Boss盲注", en: "Boss Blind" }, cls: "boss-blind", chip: "boss" },
 ];
 
 /* ---------- 小丑牌定义 ---------- */
@@ -197,7 +218,8 @@ const JOKER_DEFS = [
     name: { zh: "照片", en: "Photograph" },
     desc: { zh: "打出的第一张人头牌 ×2 倍率", en: "First played face card gives ×2 Mult" },
     perCard: (c, s) => (["J", "Q", "K"].includes(c.rank) && s.firstFace === c) ? { xmult: 2 } : null },
-  { id: "abstract", icon: "🎨", rarity: "common", cost: 4,
+  /* 单卡受控实验（40局×51组）:边际增益 +0.85 底注居 common 之首，$4 明显低估 → $6 */
+  { id: "abstract", icon: "🎨", rarity: "common", cost: 6,
     name: { zh: "抽象小丑", en: "Abstract Joker" },
     desc: { zh: "每持有 1 张小丑牌 +3 倍率", en: "+3 Mult per Joker owned" },
     after: (s, g) => ({ mult: 3 * g.jokers.length }) },
@@ -209,7 +231,8 @@ const JOKER_DEFS = [
     name: { zh: "自力更生", en: "Bootstraps" },
     desc: { zh: "每持有 $5 +2 倍率", en: "+2 Mult per $5 owned" },
     after: (s, g) => Math.floor(g.money / 5) > 0 ? { mult: 2 * Math.floor(g.money / 5) } : null },
-  { id: "golden", icon: "🪙", rarity: "common", cost: 6,
+  /* 单卡实验边际增益 +0.93，与 $8 的斐波那契同档 → $6 提到 $7 */
+  { id: "golden", icon: "🪙", rarity: "common", cost: 7,
     name: { zh: "黄金小丑", en: "Golden Joker" },
     desc: { zh: "回合结束时获得 $4", en: "Earn $4 at end of round" },
     money: () => 4 },
@@ -407,11 +430,11 @@ const TAROTS = [
   { id: "strength", icon: "💪", cost: 5,
     name: { zh: "力量", en: "Strength" },
     desc: { zh: "每回合弃牌次数 +1 (本局)", en: "+1 discard per round (this run)" },
-    apply: g => { g.bonusDiscards++; return S("msg_discard_up", 3 + g.bonusDiscards); } },
+    apply: g => { g.bonusDiscards++; return S("msg_discard_up", BALANCE.baseDiscards + g.bonusDiscards); } },
   { id: "judgement", icon: "📯", cost: 8,
     name: { zh: "审判", en: "Judgement" },
     desc: { zh: "每回合出牌次数 +1 (本局)", en: "+1 hand per round (this run)" },
-    apply: g => { g.bonusHands++; return S("msg_hands_up", 4 + g.bonusHands); } },
+    apply: g => { g.bonusHands++; return S("msg_hands_up", BALANCE.baseHands + g.bonusHands); } },
   { id: "tower", icon: "🗼", cost: 8,
     name: { zh: "高塔", en: "The Tower" },
     desc: { zh: "手牌上限 +1 (本局)", en: "+1 hand size (this run)" },

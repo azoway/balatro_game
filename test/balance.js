@@ -1,81 +1,231 @@
 /* =========================================================
-   平衡性报告：node test/balance.js [局数]
-   用策略机器人批量跑整局，输出胜率 / 死亡底注分布 / 经济与小丑数据，
-   为调整 ANTE_BASE、小丑数值、商店价格提供依据。
+   平衡实验 CLI —— 多进程分片 + 置信区间 + 三档机器人 + 受控实验
+
+   node test/balance.js report  [--runs=500] [--bot=standard] [--deck=classic] [--ante=..] [--shards=N]
+       批量仿真：胜率(Wilson 区间)、死亡底注/Boss 分布、分差、经济、牌型与小丑数据
+   node test/balance.js tiers   [--runs=300]
+       三档机器人(novice/standard/expert)各跑一遍，校验难度带
+   node test/balance.js compare --ante-b=100,300,... [--runs=400]
+       同种子配对 A/B：当前曲线 vs 候选曲线，输出逐种子胜负差
+   node test/balance.js jokers  [--runs=40] [--rarity=all]
+       单卡受控实验：开局白送小丑 X vs 空白组，测每张卡的边际底注增益
+   node test/balance.js check   [--update]
+       基线守护：对照 test/balance-baseline.json 的容差带，越界报错
    ========================================================= */
-const { compileGame, enableFastClock, makeBot } = require("./harness");
+"use strict";
+const { execFileSync, execFile } = require("child_process");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 
-const api = compileGame();
-const { G, JOKER_BY_ID, DECKS, L } = api;
-enableFastClock();
-const bot = makeBot(api);
+const args = process.argv.slice(2);
+const MODE = args.find(a => !a.startsWith("--")) || "report";
+const opt = (name, dflt) => {
+  const a = args.find(x => x.startsWith(`--${name}=`));
+  return a ? a.slice(name.length + 3) : dflt;
+};
+const RUNS = parseInt(opt("runs", MODE === "jokers" ? "40" : MODE === "check" ? "150" : MODE === "tiers" ? "300" : "500"), 10);
+const SHARDS = Math.max(1, parseInt(opt("shards", String(Math.min(8, os.cpus().length - 1))), 10));
+const SEED0 = 10007, SEEDSTEP = 7919;
 
-const N = Math.max(1, parseInt(process.argv[2] || "50", 10));
-const DECK_ID = (process.argv[3] || "classic").replace(/^--.*/, "") || "classic";
+/* ---------- worker 模式：执行任务清单并输出 JSON ---------- */
+if (MODE === "--worker" || args.includes("--worker")) {
+  const jobsFile = opt("jobs", null);
+  const jobs = JSON.parse(fs.readFileSync(jobsFile, "utf8"));
+  const { compileGame, enableFastClock, makeBot } = require("./harness");
+  const api = compileGame();
+  enableFastClock();
+  const bots = {};
+  (async () => {
+    const out = [];
+    for (const job of jobs) {
+      if (job.ante) api.ANTE_BASE.splice(0, api.ANTE_BASE.length, ...job.ante);
+      bots[job.bot] ||= makeBot(api, job.bot);
+      const r = await bots[job.bot].simulate(job.seed, job.deck, { grantJoker: job.grantJoker });
+      out.push({ ...job, ...r, handTypes: r.handTypes, jokersOwned: r.jokers });
+    }
+    process.stdout.write(JSON.stringify(out));
+  })().catch(e => { console.error(e); process.exit(1); });
+  return;
+}
 
-/* --ante=100,300,... 覆盖底注目标曲线，用于 A/B 调参 */
-const anteArg = process.argv.find(a => a.startsWith("--ante="));
-if (anteArg) {
-  const curve = anteArg.slice(7).split(",").map(Number);
-  if (curve.length && curve.every(Number.isFinite)) {
-    api.ANTE_BASE.splice(0, api.ANTE_BASE.length, ...curve);
-    console.log("使用自定义曲线:", curve.join(", "));
-  }
+/* ---------- 父进程：分片执行任务 ---------- */
+function runTasks(tasks) {
+  const shards = Array.from({ length: SHARDS }, () => []);
+  tasks.forEach((t, i) => shards[i % SHARDS].push(t));
+  const t0 = Date.now();
+  const results = [];
+  const files = [];
+  const procs = shards.filter(s => s.length).map((shard, i) => {
+    const f = path.join(os.tmpdir(), `joker-balance-${process.pid}-${i}.json`);
+    fs.writeFileSync(f, JSON.stringify(shard));
+    files.push(f);
+    return new Promise((res, rej) => {
+      execFile(process.execPath, [__filename, "--worker", `--jobs=${f}`],
+        { maxBuffer: 1 << 28 }, (err, stdout) => {
+          if (err) return rej(err);
+          results.push(...JSON.parse(stdout));
+          res();
+        });
+    });
+  });
+  return Promise.all(procs).then(() => {
+    files.forEach(f => { try { fs.unlinkSync(f); } catch (e) { /* 忽略 */ } });
+    console.log(`(${tasks.length} 局 · ${SHARDS} 分片 · ${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+    return results;
+  });
+}
+
+const seeds = n => Array.from({ length: n }, (_, i) => SEED0 + i * SEEDSTEP);
+const mkTasks = (n, over = {}) => seeds(n).map(seed => ({
+  seed, deck: opt("deck", "classic"), bot: opt("bot", "standard"),
+  ante: opt("ante", null)?.split(",").map(Number) || null, ...over,
+}));
+
+/* Wilson 95% 置信区间 */
+function wilson(k, n) {
+  if (!n) return [0, 0];
+  const z = 1.96, p = k / n, d = 1 + z * z / n;
+  const c = (p + z * z / (2 * n)) / d;
+  const e = z * Math.sqrt((p * (1 - p) + z * z / (4 * n)) / n) / d;
+  return [Math.max(0, c - e), Math.min(1, c + e)];
+}
+const pct = x => (x * 100).toFixed(1) + "%";
+
+function summarize(rs, label = "") {
+  const n = rs.length;
+  const wins = rs.filter(r => r.result === "win").length;
+  const losses = rs.filter(r => r.result === "lose");
+  const [lo, hi] = wilson(wins, n);
+  const avg = f => rs.reduce((s, r) => s + f(r), 0) / n;
+  console.log(`\n—— ${label || "报告"} · ${n} 局 ——`);
+  console.log(`胜率: ${wins}/${n} = ${pct(wins / n)}  [${pct(lo)}, ${pct(hi)}]`);
+  const byAnte = {};
+  losses.forEach(r => byAnte[r.ante] = (byAnte[r.ante] || 0) + 1);
+  console.log("死亡底注分布:");
+  Object.keys(byAnte).sort((a, b) => a - b).forEach(a => {
+    console.log(`  底注 ${a}: ${"█".repeat(Math.round(byAnte[a] / n * 60))} ${byAnte[a]} (${pct(byAnte[a] / n)})`);
+  });
+  console.log(`平均死亡底注 ${avg(r => r.ante).toFixed(2)} · 死亡时分差 ${pct(1 - avg(r => r.result === "lose" ? r.scoreRatio : 1))} · 终局$${avg(r => r.money).toFixed(1)} · 小丑${avg(r => r.jokersOwned.length).toFixed(1)}`);
+  // 分 Boss 死亡率（死亡数 / 遭遇数）
+  const faced = {}, killed = {};
+  rs.forEach(r => {
+    r.bossesFaced.forEach(b => faced[b] = (faced[b] || 0) + 1);
+    if (r.result === "lose" && r.deathBlind === 2 && r.deathBoss) killed[r.deathBoss] = (killed[r.deathBoss] || 0) + 1;
+  });
+  const bossRows = Object.keys(faced)
+    .map(b => ({ b, faced: faced[b], rate: (killed[b] || 0) / faced[b] }))
+    .sort((a, x) => x.rate - a.rate);
+  console.log("Boss 击杀率（死亡/遭遇）:");
+  bossRows.forEach(r => console.log(`  ${r.b.padEnd(9)} ${pct(r.rate).padStart(6)}  (${killed[r.b] || 0}/${r.faced})`));
+  // 牌型使用
+  const ht = {};
+  rs.forEach(r => Object.entries(r.handTypes).forEach(([k, v]) => ht[k] = (ht[k] || 0) + v));
+  const totalHands = Object.values(ht).reduce((a, b) => a + b, 0) || 1;
+  console.log("牌型使用: " + Object.entries(ht).sort((a, b) => b[1] - a[1]).slice(0, 6)
+    .map(([k, v]) => `${k} ${pct(v / totalHands)}`).join(" · "));
+  return { n, wins, winRate: wins / n, ci: [lo, hi], avgDeathAnte: avg(r => r.ante), byAnte, bossRows };
 }
 
 (async () => {
-  const runs = [];
-  const t0 = Date.now();
-  for (let i = 0; i < N; i++) {
-    const seed = 10007 + i * 7919;   // 固定序列，报告可复现
-    const { result, violations } = await bot.simulate(seed, DECK_ID);
-    runs.push({
-      seed, result,
-      ante: G.ante, round: G.round, money: G.money,
-      jokers: G.jokers.map(j => j.id),
-      vouchers: G.vouchers.slice(),
-      bestHand: G.bestHand ? G.bestHand.total : 0,
-    });
-    if (violations.length) console.error(`⚠ seed=${seed}: ${violations.join("; ")}`);
-    if ((i + 1) % 10 === 0) process.stdout.write(`  ...${i + 1}/${N}\n`);
+  if (MODE === "report") {
+    const rs = await runTasks(mkTasks(RUNS));
+    summarize(rs, `${opt("bot", "standard")} · ${opt("deck", "classic")}`);
   }
-  const secs = ((Date.now() - t0) / 1000).toFixed(1);
 
-  const wins = runs.filter(r => r.result === "win").length;
-  const losses = runs.filter(r => r.result === "lose");
-  const weird = runs.filter(r => !["win", "lose"].includes(r.result));
+  else if (MODE === "tiers") {
+    for (const bot of ["novice", "standard", "expert"]) {
+      const rs = await runTasks(mkTasks(RUNS, { bot }));
+      summarize(rs, `机器人 ${bot}`);
+    }
+    console.log("\n机器人难度带（校准值）: novice 0-3% < standard 2-8% < expert 4-12%；真人上限远高于 expert");
+  }
 
-  console.log(`\n===== 平衡报告 · ${N} 局 · 牌组 ${DECK_ID} · ${secs}s =====`);
-  console.log(`胜率: ${wins}/${N} (${(wins / N * 100).toFixed(1)}%)${weird.length ? ` · 异常终局 ${weird.length}` : ""}`);
+  else if (MODE === "compare") {
+    const anteB = opt("ante-b", null)?.split(",").map(Number);
+    if (!anteB) { console.error("需要 --ante-b=100,300,..."); process.exit(1); }
+    const A = await runTasks(mkTasks(RUNS));
+    const B = await runTasks(mkTasks(RUNS, { ante: anteB }));
+    const a = summarize(A, "A: 当前曲线");
+    const b = summarize(B, "B: 候选曲线");
+    // 同种子配对
+    const byS = {};
+    A.forEach(r => byS[r.seed] = { a: r });
+    B.forEach(r => (byS[r.seed] ||= {}).b = r);
+    let bBetter = 0, aBetter = 0, anteDelta = 0;
+    Object.values(byS).forEach(({ a: ra, b: rb }) => {
+      if (!ra || !rb) return;
+      const va = ra.result === "win" ? 99 : ra.ante, vb = rb.result === "win" ? 99 : rb.ante;
+      if (vb > va) bBetter++; else if (va > vb) aBetter++;
+      anteDelta += Math.min(vb, 20) - Math.min(va, 20);
+    });
+    console.log(`\n配对对比: B更深 ${bBetter} 局 · A更深 ${aBetter} 局 · 平均底注差 ${(anteDelta / RUNS).toFixed(2)}`);
+  }
 
-  // 死亡底注分布
-  const byAnte = {};
-  losses.forEach(r => byAnte[r.ante] = (byAnte[r.ante] || 0) + 1);
-  console.log("\n死亡底注分布:");
-  Object.keys(byAnte).sort((a, b) => a - b).forEach(a => {
-    const n = byAnte[a];
-    console.log(`  底注 ${a}: ${"█".repeat(Math.round(n / N * 60))} ${n} (${(n / N * 100).toFixed(0)}%)`);
-  });
+  else if (MODE === "jokers") {
+    const { compileGame } = require("./harness");
+    const api = compileGame();
+    const rarity = opt("rarity", "all");
+    const ids = api.JOKER_DEFS.filter(d => rarity === "all" || d.rarity === rarity).map(d => d.id);
+    const base = await runTasks(mkTasks(RUNS, { grantJoker: null }));
+    const baseAvg = base.reduce((s, r) => s + (r.result === "win" ? 10 : r.ante), 0) / base.length;
+    console.log(`空白组平均到达底注: ${baseAvg.toFixed(2)}（win 计为 10）`);
+    const tasks = [];
+    for (const id of ids) tasks.push(...mkTasks(RUNS, { grantJoker: id }));
+    const rs = await runTasks(tasks);
+    const rows = ids.map(id => {
+      const sub = rs.filter(r => r.grantJoker === id);
+      const avg = sub.reduce((s, r) => s + (r.result === "win" ? 10 : r.ante), 0) / sub.length;
+      return { id, gain: avg - baseAvg, wins: sub.filter(r => r.result === "win").length };
+    }).sort((a, b) => b.gain - a.gain);
+    console.log("\n单卡边际底注增益（开局白送 vs 空白组，正=更强）:");
+    rows.forEach(r => {
+      const def = api.JOKER_BY_ID.get(r.id);
+      const bar = r.gain >= 0 ? "+".repeat(Math.round(r.gain * 10)) : "-".repeat(Math.round(-r.gain * 10));
+      console.log(`  ${(def.icon + " " + r.id).padEnd(18)} ${r.gain >= 0 ? "+" : ""}${r.gain.toFixed(2)} ${bar}${r.wins ? ` (win×${r.wins})` : ""} $${def.cost} ${def.rarity}`);
+    });
+  }
 
-  const avg = (arr, f) => arr.length ? (arr.reduce((s, r) => s + f(r), 0) / arr.length) : 0;
-  console.log(`\n平均: 底注 ${avg(runs, r => r.ante).toFixed(1)} · 回合 ${avg(runs, r => r.round).toFixed(1)} · 终局资金 $${avg(runs, r => r.money).toFixed(1)} · 最佳出牌 ${Math.round(avg(runs, r => r.bestHand))}`);
-  console.log(`平均小丑数: ${avg(runs, r => r.jokers.length).toFixed(1)} · 平均优惠券数: ${avg(runs, r => r.vouchers.length).toFixed(1)}`);
+  else if (MODE === "check") {
+    const rs = await runTasks(mkTasks(RUNS));
+    const s = summarize(rs, "基线检查");
+    const basePath = path.join(__dirname, "balance-baseline.json");
+    const current = {
+      runs: s.n,
+      winRate: +(s.winRate).toFixed(4),
+      avgDeathAnte: +s.avgDeathAnte.toFixed(2),
+      maxAnteShare: +Math.max(...Object.values(s.byAnte).map(v => v / s.n)).toFixed(3),
+    };
+    if (args.includes("--update") || !fs.existsSync(basePath)) {
+      // 容差带：胜率 ±6pp、平均死亡底注 ±0.8、单底注死亡占比上限 = 当前+10pp
+      const baseline = {
+        winRate: [Math.max(0, current.winRate - 0.06), current.winRate + 0.06],
+        avgDeathAnte: [current.avgDeathAnte - 0.8, current.avgDeathAnte + 0.8],
+        maxAnteShare: Math.min(0.5, current.maxAnteShare + 0.1),
+        generatedWith: current,
+      };
+      fs.writeFileSync(basePath, JSON.stringify(baseline, null, 2) + "\n");
+      console.log("\n✔ 基线已写入 test/balance-baseline.json");
+    } else {
+      const b = JSON.parse(fs.readFileSync(basePath, "utf8"));
+      const bad = [];
+      if (current.winRate < b.winRate[0] || current.winRate > b.winRate[1])
+        bad.push(`胜率 ${pct(current.winRate)} 超出带 [${pct(b.winRate[0])}, ${pct(b.winRate[1])}]`);
+      if (current.avgDeathAnte < b.avgDeathAnte[0] || current.avgDeathAnte > b.avgDeathAnte[1])
+        bad.push(`平均死亡底注 ${current.avgDeathAnte} 超出带 [${b.avgDeathAnte}]`);
+      if (current.maxAnteShare > b.maxAnteShare)
+        bad.push(`死亡尖峰 ${pct(current.maxAnteShare)} 超过上限 ${pct(b.maxAnteShare)}`);
+      if (bad.length) {
+        console.error("\n✗ 平衡基线越界（内容改动可能破坏了曲线，或需 --update 重定基线）:");
+        bad.forEach(x => console.error("  " + x));
+        process.exit(1);
+      }
+      console.log("\n✔ 平衡指标在基线容差带内");
+    }
+  }
 
-  // 小丑购买率 与 携带者平均死亡底注（正相关 ≈ 更强）
-  const jStats = {};
-  runs.forEach(r => r.jokers.forEach(id => {
-    (jStats[id] ||= { n: 0, anteSum: 0 }).n++;
-    jStats[id].anteSum += r.ante;
-  }));
-  const rows = Object.entries(jStats)
-    .map(([id, s]) => ({ id, n: s.n, avgAnte: s.anteSum / s.n }))
-    .sort((a, b) => b.n - a.n);
-  console.log("\n小丑持有率 Top15（持有局数 · 携带时平均到达底注）:");
-  rows.slice(0, 15).forEach(r => {
-    const def = JOKER_BY_ID.get(r.id);
-    console.log(`  ${(def.icon + " " + L(def.name)).padEnd(14)} ×${String(r.n).padEnd(4)} 底注 ${r.avgAnte.toFixed(1)}`);
-  });
-  const never = [...JOKER_BY_ID.keys()].filter(id => !jStats[id]);
-  if (never.length) console.log(`\n从未被购买: ${never.map(id => L(JOKER_BY_ID.get(id).name)).join("、")}`);
-  process.exit(0);
+  else {
+    console.error(`未知模式: ${MODE}（可用: report / tiers / compare / jokers / check）`);
+    process.exit(1);
+  }
 })().catch(e => { console.error("CRASH:", e); process.exit(1); });

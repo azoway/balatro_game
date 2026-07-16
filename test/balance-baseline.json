@@ -1,0 +1,17 @@
+{
+  "winRate": [
+    0,
+    0.08
+  ],
+  "avgDeathAnte": [
+    4.390000000000001,
+    5.99
+  ],
+  "maxAnteShare": 0.377,
+  "generatedWith": {
+    "runs": 300,
+    "winRate": 0.02,
+    "avgDeathAnte": 5.19,
+    "maxAnteShare": 0.277
+  }
+}

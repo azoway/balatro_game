@@ -60,10 +60,15 @@ jsconfig.json 编辑器智能提示配置（配合 engine.js 中的 JSDoc typede
 ## 开发
 
 ```bash
-node test/test.js         # 回归测试：牌型/计分/塔罗/商店/存档迁移/SW资源校验 + 机器人整局模拟
-node test/balance.js 100  # 平衡报告：批量模拟输出胜率、死亡底注分布、小丑持有率
-node test/balance.js 100 classic --ante=100,300,800,...  # 覆盖目标曲线做 A/B 调参
-python3 test/e2e.py       # 浏览器 E2E（需 playwright + chromium-headless-shell）
+node test/test.js                  # 回归测试：牌型/计分/塔罗/商店/存档迁移/SW校验 + 机器人整局模拟
+python3 test/e2e.py                # 浏览器 E2E（需 playwright + chromium-headless-shell）
+
+# 平衡实验 CLI（多进程分片，500 局约 40 秒）
+node test/balance.js report --runs=500            # 胜率(Wilson区间)/死亡分布/分Boss击杀率/分差/经济
+node test/balance.js tiers --runs=300             # 三档机器人(novice/standard/expert)难度带校验
+node test/balance.js compare --ante-b=100,300,... # 同种子配对 A/B 对比候选目标曲线
+node test/balance.js jokers --runs=40             # 单卡受控实验：逐小丑测边际底注增益
+node test/balance.js check                        # 基线守护：越出容差带即报错（--update 重定基线）
 ```
 
-`test/test.js` 会校验 sw.js 的资源清单与磁盘一致，并在静态资源变化而 `CACHE` 版本未升级时报错（快照存于 `test/sw-snapshot.json`）。
+所有可调数值集中在 `defs.js` 的 `BALANCE` 对象。`test/test.js` 会校验 sw.js 资源清单，并在静态资源相对 HEAD 有改动而 `CACHE` 版本未升级时报错；`test/balance-baseline.json` 记录平衡容差带，内容改动破坏曲线时 `check` 模式会拦截。

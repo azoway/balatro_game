@@ -211,11 +211,12 @@ function newGameState(seed) {
     deck: [], hand: [], selected: new Set(),
     jokers: [], maxJokers: 5,
     consumables: [], maxConsumables: 2,
-    money: 4, ante: 1, round: 0,
-    handSize: 8, maxHands: 4, maxDiscards: 3,
-    handsLeft: 4, discardsLeft: 3,
+    money: BALANCE.startMoney, ante: 1, round: 0,
+    handSize: BALANCE.handSize,
+    maxHands: BALANCE.baseHands, maxDiscards: BALANCE.baseDiscards,
+    handsLeft: BALANCE.baseHands, discardsLeft: BALANCE.baseDiscards,
     bonusHands: 0, bonusDiscards: 0, freeReroll: 0,
-    interestCap: 5, vouchers: [], pendingPack: null,
+    interestCap: BALANCE.interestCap, vouchers: [], pendingPack: null,
     disabledJokerUid: null,                       // 猩红之心禁用的小丑
     voucherDiscount: false, investment: 0, doubleTag: 0,   // 标签效果
     roundScore: 0, target: 0,
@@ -281,8 +282,9 @@ function blindTarget(idx) {
   const ai = G.ante - 1;
   const base = ai < ANTE_BASE.length
     ? ANTE_BASE[ai]
-    : ANTE_BASE[ANTE_BASE.length - 1] * Math.pow(ENDLESS_GROWTH, ai - ANTE_BASE.length + 1);
-  const mults = [1, 1.5, G.boss?.id === "wall" ? 4 : 2];
+    : ANTE_BASE[ANTE_BASE.length - 1] * Math.pow(BALANCE.endlessGrowth, ai - ANTE_BASE.length + 1);
+  const bossMult = BALANCE.bossMultOverride[G.boss?.id] ?? BALANCE.bossMult;
+  const mults = [1, BALANCE.bigBlindMult, bossMult];
   return Math.floor(base * (mults[idx] ?? 1));
 }
 
@@ -485,7 +487,7 @@ function rollShop() {
   G.shopStock = [];
   const owned = new Set(G.jokers.map(j => j.id));
   const pool = JOKER_DEFS.filter(d => !owned.has(d.id));
-  const weights = { common: 12, uncommon: 5, rare: 2, legendary: 1 };
+  const weights = BALANCE.rarityWeights;
   const jokerCount = G.vouchers.includes("overstock") ? 3 : 2;
   for (let i = 0; i < jokerCount && pool.length; i++) {
     const bag = [];
@@ -495,8 +497,8 @@ function rollShop() {
     G.shopStock.push({ kind: "joker", def: pick, ed: rollEdition(), sold: false });
   }
   G.shopStock.push({ kind: "planet", def: rnd(PLANETS), sold: false });
-  // 塔罗位 15% 概率被幻灵牌顶替
-  if (rng() < 0.15) G.shopStock.push({ kind: "spectral", def: rnd(SPECTRALS), sold: false });
+  // 塔罗位低概率被幻灵牌顶替
+  if (rng() < BALANCE.spectralChance) G.shopStock.push({ kind: "spectral", def: rnd(SPECTRALS), sold: false });
   else G.shopStock.push({ kind: "tarot", def: rnd(TAROTS), sold: false });
   G.shopStock.push({ kind: "pack", def: rnd(PACKS), sold: false });
   const vLeft = VOUCHERS.filter(v => !G.vouchers.includes(v.id));

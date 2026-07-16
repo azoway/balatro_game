@@ -499,18 +499,19 @@ localStorage.removeItem("joker_save_v1");
   for (const f of expected) {
     assert(assetList.includes(f), `SW 清单包含: ${f}`);
   }
-  // 静态资源内容变了但 CACHE 没升版本 → 报错提醒（快照存 test/sw-snapshot.json）
-  const crypto = require("crypto");
-  const hash = crypto.createHash("sha1");
-  for (const a of assetList) hash.update(fs.readFileSync(path.join(ROOT, a)));
-  const current = { hash: hash.digest("hex"), cache: cacheName };
-  const snapPath = path.join(__dirname, "sw-snapshot.json");
-  if (fs.existsSync(snapPath)) {
-    const snap = JSON.parse(fs.readFileSync(snapPath, "utf8"));
-    assert(!(snap.hash !== current.hash && snap.cache === current.cache),
-      `静态资源已变化但 sw.js 的 CACHE 仍为 "${cacheName}"，请升级版本号`);
-  }
-  fs.writeFileSync(snapPath, JSON.stringify(current, null, 2) + "\n");
+  // 语义：相对上一次提交（HEAD），若资源有改动则 CACHE 必须已升级——一个提交周期只需升一次
+  try {
+    const { execSync } = require("child_process");
+    const headSw = execSync("git show HEAD:sw.js", { cwd: ROOT, stdio: ["ignore", "pipe", "ignore"] }).toString();
+    const headCache = (headSw.match(/const CACHE = "([^"]+)"/) || [])[1];
+    if (headCache === cacheName) {
+      const changed = execSync(`git status --porcelain -- ${assetList.join(" ")}`,
+        { cwd: ROOT, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+      assert(!changed, `静态资源相对 HEAD 已修改但 CACHE 仍为 "${cacheName}"，请升级版本号:\n${changed}`);
+    } else {
+      pass++;   // 本周期已升级缓存版本
+    }
+  } catch (e) { /* 无 git 环境时跳过 */ }
 }
 
 (async () => {
