@@ -4,7 +4,7 @@ const path = require("path");
 const { elements, compileGame, enableFastClock, makeBot, ROOT } = require("./harness");
 
 const api = compileGame();
-const { G, evaluate, playHand, startBlind, JOKER_DEFS, rollShop, rollEdition, buyItem,
+const { G, evaluate, playHand, startBlind, discard, JOKER_DEFS, rollShop, rollEdition, buyItem,
   computeScoring, newGameState, newGame, skipBlind, blindTarget, seedRNG, rng, buildDeck,
   TAROTS, TAROT_BY_ID, BOSSES, VOUCHERS, EDITIONS, DECKS, HAND_TYPES,
   saveGame, loadGame, useConsumable, pickBoss, openPack, choosePackOption, skipPack,
@@ -243,6 +243,89 @@ G.currentBoss = BOSSES.find(b => b.id === "club");
 sc = computeScoring([c("2","♣"), c("5","♣"), c("9","♣"), c("J","♣"), c("K","♣")]);
 assert(sc.allDebuffed === true && sc.total === 0, "全禁用牌 0 分");
 G.currentBoss = null;
+
+/* ---------- 新 Boss 机制 ---------- */
+assert(BOSSES.length === 14, "14 个 Boss");
+G.currentBoss = BOSSES.find(b => b.id === "mark");
+sc = computeScoring([c("K","♠"), c("K","♥")]);
+assert(sc.allDebuffed === true, "印记: 人头牌全禁用");
+sc = computeScoring([c("7","♠"), c("7","♥")]);
+assert(sc.total === 48, "印记: 非人头牌正常计分");
+G.currentBoss = BOSSES.find(b => b.id === "flint");
+sc = computeScoring([c("7","♠"), c("7","♥")]);
+assert(sc.total === (5 + 14) * 1, "燧石: 基础10/2减半为5/1: " + sc.total);
+G.currentBoss = null;
+// 蛇: 出牌后只补3张
+newGameState(31);
+G.boss = BOSSES.find(b => b.id === "serpent");
+startBlind(2);
+assert(G.hand.length === 8, "蛇: 开局仍发满8张");
+// 通过 discard 间接验证蛇的补牌（弃后手上1张 → 只补到3张）
+G.hand = [G.hand[0]];
+G.selected.clear();
+G.selected.add(G.hand[0].id);
+discard();
+assert(G.hand.length === 3, "蛇: 弃1张后只补到3张: " + G.hand.length);
+// 猩红之心: 被禁用的小丑不参与计分
+newGameState(33);
+G.jokers = [{ id: "joker", uid: "cj1" }];
+G.disabledJokerUid = "cj1";
+sc = computeScoring([c("7","♠"), c("7","♥")]);
+assert(sc.total === 48, "猩红之心: 禁用小丑无加成: " + sc.total);
+G.disabledJokerUid = null;
+sc = computeScoring([c("7","♠"), c("7","♥")]);
+assert(sc.total === 144, "解除禁用后恢复加成");
+G.jokers = [];
+
+/* ---------- 幻灵牌 ---------- */
+assert(api.SPECTRALS.length === 5 && api.consumableDef("aura") && api.consumableDef("hermit"), "消耗品统一查询");
+newGameState(35);
+G.state = "shop"; G.money = 50;
+const soulItem = { kind: "spectral", def: api.SPECTRAL_BY_ID.get("the_soul"), sold: false };
+G.shopStock = [soulItem];
+buyItem(soulItem, soulItem.def.cost);
+assert(G.consumables.length === 1, "幻灵牌进消耗品槽");
+assert(useConsumable(G.consumables[0]) === true, "灵魂使用成功");
+assert(G.jokers.length === 1 && JOKER_DEFS.find(d => d.id === G.jokers[0].id).rarity === "legendary", "灵魂: 获得传奇小丑");
+// 槽满时灵魂不可用且不消耗
+G.jokers = JOKER_DEFS.slice(0, 5).map((d, i) => ({ id: d.id, uid: "s" + i }));
+G.consumables = [{ id: "the_soul", uid: "so2" }];
+assert(useConsumable(G.consumables[0]) === false && G.consumables.length === 1, "灵魂: 槽满不消耗");
+G.jokers = []; G.consumables = [];
+// 献祭
+const deckBefore = G.masterDeck.length;
+const moneyBefore = G.money;
+G.consumables = [{ id: "immolate", uid: "im1" }];
+assert(useConsumable(G.consumables[0]) === true, "献祭使用成功");
+assert(G.masterDeck.length === deckBefore - 5 && G.money === moneyBefore + 20, "献祭: -5张牌 +$20");
+// 谜影复制
+G.state = "playing";
+G.hand = [{ ...G.masterDeck[0] }];
+G.selected = new Set([G.hand[0].id]);
+G.consumables = [{ id: "cryptid", uid: "cr1" }];
+assert(useConsumable(G.consumables[0]) === true, "谜影使用成功");
+assert(G.masterDeck.length === deckBefore - 5 + 2, "谜影: 牌库 +2 副本");
+
+/* ---------- 新标签 ---------- */
+assert(api.SKIP_TAGS.length === 7, "7 种标签");
+newGameState(37);
+const jokerTag = api.SKIP_TAGS.find(t => t.id === "joker_tag");
+jokerTag.apply(G);
+assert(G.jokers.length === 1, "小丑标签: 获得小丑");
+G.jokers = JOKER_DEFS.slice(0, 5).map((d, i) => ({ id: d.id, uid: "t" + i }));
+const m0money = G.money;
+jokerTag.apply(G);
+assert(G.money === m0money + 4, "小丑标签: 槽满改发 $4");
+G.jokers = [];
+api.SKIP_TAGS.find(t => t.id === "voucher_tag").apply(G);
+assert(G.voucherDiscount === true, "折扣标签生效");
+api.SKIP_TAGS.find(t => t.id === "investment_tag").apply(G);
+assert(G.investment === 1, "投资标签生效");
+api.SKIP_TAGS.find(t => t.id === "double_tag").apply(G);
+assert(G.doubleTag === 1, "加倍标签生效");
+
+/* ---------- 帮助页 ---------- */
+assert(api.HELP_PAGES.length === 4 && api.HELP_PAGES.every(p => p.title.zh && p.title.en && p.body.zh && p.body.en), "帮助页 4 页双语齐全");
 
 /* ---------- 持久化牌库 + 塔罗改牌 ---------- */
 newGameState(13);

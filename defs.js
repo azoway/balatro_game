@@ -82,6 +82,14 @@ const BOSSES = [
     desc: { zh: "本回合只能出 1 次牌", en: "Play only 1 hand" } },
   { id: "wall",   icon: "🧱", name: { zh: "高墙", en: "The Wall" },
     desc: { zh: "目标分数特别高", en: "Extra large target score" } },
+  { id: "mark",   icon: "🃏", name: { zh: "印记", en: "The Mark" },
+    desc: { zh: "所有人头牌 (J/Q/K) 被禁用", en: "All face cards (J/Q/K) are debuffed" } },
+  { id: "flint",  icon: "🪨", name: { zh: "燧石", en: "The Flint" },
+    desc: { zh: "牌型的基础筹码和倍率减半", en: "Base Chips and Mult are halved" } },
+  { id: "serpent",icon: "🐍", name: { zh: "蛇", en: "The Serpent" },
+    desc: { zh: "出牌或弃牌后只补 3 张牌", en: "Draw only 3 cards after each play or discard" } },
+  { id: "crimson",icon: "🫀", name: { zh: "猩红之心", en: "Crimson Heart" },
+    desc: { zh: "每次出牌随机禁用一张小丑牌", en: "One random Joker is disabled every hand" } },
 ];
 
 /* ---------- 盲注元数据 ---------- */
@@ -436,6 +444,68 @@ const TAROTS = [
 ];
 const TAROT_BY_ID = new Map(TAROTS.map(t => [t.id, t]));
 
+/* ---------- 幻灵牌（高风险高收益消耗品，商店塔罗位低概率出现） ----------
+   apply 返回 null 表示无法使用（不消耗） */
+const SPECTRALS = [
+  { id: "ectoplasm", icon: "🫧", cost: 6, spectral: true,
+    name: { zh: "灵质", en: "Ectoplasm" },
+    desc: { zh: "随机一张小丑牌获得多彩版本（×1.5 倍率），手牌上限 -1", en: "A random Joker becomes Polychrome (×1.5 Mult); -1 hand size" },
+    apply: g => {
+      const pool = g.jokers.filter(j => !j.ed);
+      if (!pool.length || g.handSize <= 5) return null;
+      const j = rnd(pool);
+      j.ed = "poly";
+      g.handSize--;
+      return `${JOKER_BY_ID.get(j.id).icon} → ${L(EDITIONS.poly.name)}`;
+    } },
+  { id: "aura", icon: "🌈", cost: 6, spectral: true, targets: [1, 1],
+    name: { zh: "光环", en: "Aura" },
+    desc: { zh: "选中 1 张手牌获得随机增强", en: "Give 1 selected card a random enhancement" },
+    applyCards: (cards, g) => {
+      const enh = rnd(Object.keys(ENH));
+      applyCardMod(cards[0].id, x => x.enh = enh);
+      return S("msg_enhanced", cards[0].rank + cards[0].suit, L(ENH[enh].name));
+    } },
+  { id: "cryptid", icon: "👣", cost: 7, spectral: true, targets: [1, 1],
+    name: { zh: "谜影", en: "Cryptid" },
+    desc: { zh: "复制选中的 1 张手牌，2 张副本加入牌库", en: "Create 2 copies of 1 selected card in your deck" },
+    applyCards: (cards, g) => {
+      const src = g.masterDeck.find(x => x.id === cards[0].id) || cards[0];
+      for (let k = 0; k < 2; k++) {
+        g.masterDeck.push({ ...src, id: "c" + Date.now() + Math.random().toString(36).slice(2, 5) });
+      }
+      return S("msg_copied", cards[0].rank + cards[0].suit);
+    } },
+  { id: "the_soul", icon: "👁", cost: 10, spectral: true,
+    name: { zh: "灵魂", en: "The Soul" },
+    desc: { zh: "获得一张随机传奇小丑牌", en: "Gain a random Legendary Joker" },
+    apply: g => {
+      if (g.jokers.length >= g.maxJokers) return null;
+      const pool = JOKER_DEFS.filter(d => d.rarity === "legendary" && !g.jokers.some(j => j.id === d.id));
+      if (!pool.length) return null;
+      const def = rnd(pool);
+      g.jokers.push({ id: def.id, uid: "j" + Date.now() + Math.random().toString(36).slice(2, 5) });
+      return `${def.icon} ${L(def.name)}`;
+    } },
+  { id: "immolate", icon: "🔥", cost: 5, spectral: true,
+    name: { zh: "献祭", en: "Immolate" },
+    desc: { zh: "随机销毁牌库 5 张牌，获得 $20", en: "Destroy 5 random cards in your deck, gain $20" },
+    apply: g => {
+      if (g.masterDeck.length <= 20) return null;   // 保底牌库
+      for (let k = 0; k < 5 && g.masterDeck.length; k++) {
+        const idx = Math.floor(rng() * g.masterDeck.length);
+        const [gone] = g.masterDeck.splice(idx, 1);
+        g.deck = g.deck.filter(x => x.id !== gone.id);
+        g.hand = g.hand.filter(x => x.id !== gone.id);
+      }
+      g.money += 20;
+      return "+$20";
+    } },
+];
+const SPECTRAL_BY_ID = new Map(SPECTRALS.map(s => [s.id, s]));
+/* 消耗品统一查询（塔罗 + 幻灵） */
+const consumableDef = id => TAROT_BY_ID.get(id) || SPECTRAL_BY_ID.get(id);
+
 /* ---------- 卡包（购买后 3 选 1） ---------- */
 const PACKS = [
   { kind: "arcana", icon: "🔮", cost: 4,
@@ -527,4 +597,74 @@ const SKIP_TAGS = [
       g.handLevels[k]++;
       return `${L(HAND_TYPES[k].name)} → Lv.${g.handLevels[k]}`;
     } },
+  { id: "joker_tag", icon: "🎁",
+    name: { zh: "小丑标签", en: "Joker Tag" },
+    apply: g => {
+      if (g.jokers.length >= g.maxJokers) { g.money += 4; return "+$4"; }
+      const pool = JOKER_DEFS.filter(d => d.rarity === "common" && !g.jokers.some(j => j.id === d.id));
+      const def = rnd(pool);
+      g.jokers.push({ id: def.id, uid: "j" + Date.now() + Math.random().toString(36).slice(2, 5) });
+      return `${def.icon} ${L(def.name)}`;
+    } },
+  { id: "voucher_tag", icon: "🏷",
+    name: { zh: "折扣标签", en: "Voucher Tag" },
+    apply: g => { g.voucherDiscount = true; return S("msg_tag_voucher"); } },
+  { id: "investment_tag", icon: "📈",
+    name: { zh: "投资标签", en: "Investment Tag" },
+    apply: g => { g.investment = (g.investment || 0) + 1; return S("msg_tag_investment"); } },
+  { id: "double_tag", icon: "♊",
+    name: { zh: "加倍标签", en: "Double Tag" },
+    apply: g => { g.doubleTag = (g.doubleTag || 0) + 1; return S("msg_tag_double"); } },
+];
+
+/* ---------- 帮助页 ---------- */
+const HELP_PAGES = [
+  { title: { zh: "基础流程", en: "The Basics" },
+    body: {
+      zh: `<b>目标</b>：每回合在限定出牌次数内，让回合分数达到目标分数。<br><br>
+<b>计分公式</b>：<span class="hb">筹码 × 倍率</span>。牌型决定基础值（对子 10×2、同花 35×4…），打出的每张计分牌加筹码，小丑牌再叠加成。<br><br>
+<b>回合结构</b>：每个底注依次是 小盲注 → 大盲注 → Boss盲注（带减益）。小/大盲注可跳过换随机标签奖励。共 8 个底注，通关后可进无尽模式。<br><br>
+<b>操作</b>：点牌或按 1-9 选牌（≤5张），Enter 出牌，X 弃牌换新（次数有限）。`,
+      en: `<b>Goal</b>: reach the target score each round within a limited number of hands.<br><br>
+<b>Scoring</b>: <span class="hb">Chips × Mult</span>. The poker hand sets the base (Pair 10×2, Flush 35×4…), each scored card adds chips, then Jokers stack on top.<br><br>
+<b>Structure</b>: each Ante is Small Blind → Big Blind → Boss Blind (with a debuff). Skip Small/Big for a random Tag reward. Beat all 8 Antes to win, then Endless.<br><br>
+<b>Controls</b>: click or press 1-9 to select up to 5 cards, Enter to play, X to discard.` } },
+  { title: { zh: "商店", en: "The Shop" },
+    body: {
+      zh: `每次胜利后进商店，金钱来自奖励 + 剩余出牌数 + 利息（每 $5 得 $1）。<br><br>
+<b>🃏 小丑牌</b>：核心构筑，被动加成，最多 5 张。结算按从左到右顺序——把 ×倍率 放右边收益更大（悬停用 ◀▶ 调整）。可能带版本：闪箔+50筹码 / 全息+10倍率 / 多彩×1.5倍率。双击卖出。<br><br>
+<b>🪐 星球牌</b>：永久升级一种牌型的基础值。<br>
+<b>🔮 塔罗牌</b>：买入消耗品槽，双击使用。<br>
+<b>📦 卡包</b>：3 选 1。<b>🏷 优惠券</b>：每种每局一次的永久升级。`,
+      en: `After each win you visit the shop. Money comes from rewards + unused hands + interest ($1 per $5).<br><br>
+<b>🃏 Jokers</b>: your build, up to 5. They trigger left to right — put ×Mult jokers on the right (hover for ◀▶). May carry editions: Foil +50 Chips / Holo +10 Mult / Polychrome ×1.5 Mult. Double-click to sell.<br><br>
+<b>🪐 Planets</b>: permanently upgrade one hand type.<br>
+<b>🔮 Tarots</b>: stored as consumables, double-click to use.<br>
+<b>📦 Packs</b>: pick 1 of 3. <b>🏷 Vouchers</b>: one-time permanent upgrades.` } },
+  { title: { zh: "改造牌库", en: "Deck Sculpting" },
+    body: {
+      zh: `牌库整局持久——塔罗对牌的修改会保留到之后每个回合（点右下角「牌库」随时查看）。<br><br>
+<b>目标型塔罗</b>需要在回合中先选中手牌再双击使用：太阳/星星/月亮/世界改花色，皇帝点数+1，恋人/战车/正义/恶魔附加增强，吊人销毁牌。<br><br>
+<b>增强</b>：🔷加成+30筹码 · 🔺倍率+4 · 🛡钢铁留手中×1.5 · 💰黄金回合结束+$3。<br><br>
+<b>隐藏牌型</b>：把点数/花色改齐后可打出 <b>五条</b>（120×12）和 <b>同花葫芦</b>（140×14）——改牌流的终极目标。<br><br>
+<b>🫧 幻灵牌</b>：商店塔罗位偶尔出现的高风险消耗品（销毁换钱、随机增强、复制牌、直接获得传奇小丑）。`,
+      en: `Your deck persists for the whole run — tarot modifications stay for every later round (click "Deck" bottom-right to inspect).<br><br>
+<b>Targeted tarots</b> are used mid-round on selected cards: Sun/Star/Moon/World change suits, Emperor raises rank, Lovers/Chariot/Justice/Devil add enhancements, Hanged Man destroys.<br><br>
+<b>Enhancements</b>: 🔷 +30 Chips · 🔺 +4 Mult · 🛡 Steel ×1.5 while held · 💰 Gold +$3 at round end.<br><br>
+<b>Hidden hands</b>: sculpt ranks/suits to unlock <b>Five of a Kind</b> (120×12) and <b>Flush House</b> (140×14).<br><br>
+<b>🫧 Spectrals</b>: risky consumables that occasionally replace the shop tarot (destroy for cash, random enhancement, copy cards, gain a Legendary Joker).` } },
+  { title: { zh: "进阶机制", en: "Advanced" },
+    body: {
+      zh: `<b>重触发</b>：黑客/悲喜面具/黄昏让计分牌触发两次（筹码、增强、逐卡小丑全部重复）。<br>
+<b>持有触发</b>：男爵(手中K ×1.5)、射月(手中Q +13倍率)——不出牌的牌也有价值。<br>
+<b>规则改写</b>：四指(4张成同花/顺子)、抄近路(顺子可跳点)、飞溅(全部打出的牌计分)。<br>
+<b>📐 蓝图</b>：复制右侧小丑的计分效果，可链式传递——排序就是构筑。<br>
+<b>成长</b>：绿色小丑/坐公交/方形/闪卡越打越强，徒步者让计分牌永久+5筹码。<br><br>
+<b>种子</b>：同种子同牌局。侧边栏可开今日挑战、输自定义种子；图鉴里可用历史种子复盘。`,
+      en: `<b>Retrigger</b>: Hack / Sock and Buskin / Dusk score cards twice (chips, enhancements and per-card jokers all repeat).<br>
+<b>Held triggers</b>: Baron (held Kings ×1.5), Shoot the Moon (held Queens +13 Mult) — unplayed cards matter.<br>
+<b>Rule benders</b>: Four Fingers (4-card flushes/straights), Shortcut (straights may skip a rank), Splash (every played card scores).<br>
+<b>📐 Blueprint</b>: copies the Joker to its right, chainable — ordering is building.<br>
+<b>Scaling</b>: Green Joker / Ride the Bus / Square / Flash Card grow over time; Hiker permanently adds +5 Chips to scored cards.<br><br>
+<b>Seeds</b>: same seed, same run. Daily challenge and custom seeds in the sidebar; replay past seeds from the Collection.` } },
 ];

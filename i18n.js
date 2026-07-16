@@ -112,6 +112,30 @@ const STR = {
   history_title:     { zh: "最近对局", en: "Recent Runs" },
   replay_tip:        { zh: "用该种子重开一局", en: "Replay this seed" },
 
+  /* 幻灵牌 */
+  spectral_label:    { zh: "幻灵牌", en: "Spectral" },
+  cannot_use:        { zh: "当前无法使用", en: "Can't use this right now" },
+  msg_copied:        { zh: "复制了 2 张 {0} 进牌库", en: "Added 2 copies of {0} to your deck" },
+
+  /* 标签 */
+  msg_tag_voucher:   { zh: "下张优惠券半价", en: "Next voucher is half price" },
+  msg_tag_investment:{ zh: "击败下个Boss +$15", en: "+$15 after beating the next Boss" },
+  msg_tag_double:    { zh: "下一个标签效果 ×2", en: "Next tag triggers twice" },
+  investment_line:   { zh: "投资标签兑现", en: "Investment payout" },
+
+  /* 帮助 / 引导 */
+  help_btn:          { zh: "❓ 玩法说明", en: "❓ How to Play" },
+  prev_btn:          { zh: "◀ 上一页", en: "◀ Prev" },
+  next_btn:          { zh: "下一页 ▶", en: "Next ▶" },
+  tip_shop:          { zh: "💡 第一次进商店：小丑牌是核心构筑，钱留 $5 的倍数可以吃利息", en: "💡 First shop: Jokers are your build — keeping multiples of $5 earns interest" },
+  tip_tarot:         { zh: "💡 目标型塔罗要在回合中先选中手牌，再双击消耗品使用", en: "💡 Targeted tarots: select cards in hand mid-round, then double-click the consumable" },
+  tip_boss:          { zh: "💡 Boss 盲注带减益，效果显示在左侧盲注面板", en: "💡 Boss blinds have a debuff — shown in the blind panel on the left" },
+
+  /* 分享 */
+  share_btn:         { zh: "🔗 复制分享链接", en: "🔗 Copy share link" },
+  share_copied:      { zh: "🔗 链接已复制，同种子同牌局", en: "🔗 Link copied — same seed, same run" },
+  share_manual:      { zh: "复制此链接分享:", en: "Copy this link to share:" },
+
   /* 卡包 */
   pick_one:          { zh: "3 选 1", en: "Pick 1 of 3" },
   choose_btn:        { zh: "选择", en: "Choose" },

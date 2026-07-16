@@ -49,6 +49,7 @@ function compileGame() {
   src += `\nmodule.exports = { G, evaluate, playHand, startBlind, discard, JOKER_DEFS, JOKER_BY_ID,
     rollShop, rollEdition, buyItem, computeScoring, newGameState, newGame, skipBlind, blindTarget,
     seedRNG, rng, buildDeck, TAROTS, TAROT_BY_ID, BOSSES, PACKS, VOUCHERS, EDITIONS, DECKS, PLANETS,
+    SPECTRALS, SPECTRAL_BY_ID, SKIP_TAGS, HELP_PAGES, consumableDef, sellJoker, shareLink,
     saveGame, loadGame, useConsumable, applyCardMod, pickBoss, openPack, choosePackOption, skipPack,
     loadStats, recordGameEnd, markJokersSeen, RANK_VAL, HAND_TYPES,
     ENH_CHIPS, ENH_MULT, ENH_STEEL_X, S, L };`;
@@ -67,11 +68,39 @@ function enableFastClock() {
   global.setTimeout = (cb, ms) => realSetTimeout(cb, 0);
 }
 
-/* 策略机器人：打组合牌、弃牌换手、商店采购、开卡包 */
+/* 策略机器人：打组合牌、追同花、用塔罗、弃牌换手、商店采购与升级换代 */
 function makeBot(api) {
-  const { G, RANK_VAL, TAROT_BY_ID, playHand, discard, startBlind, buyItem,
-    useConsumable, choosePackOption, skipPack, newGameState, newGame, pickBoss } = api;
+  const { G, RANK_VAL, JOKER_BY_ID, playHand, discard, startBlind, buyItem,
+    useConsumable, choosePackOption, skipPack, newGameState, pickBoss, sellJoker } = api;
   const byRankDesc = (a, b) => RANK_VAL[b.rank] - RANK_VAL[a.rank];
+  const RARITY_W = { common: 1, uncommon: 2, rare: 3, legendary: 4 };
+  const SUIT_TAROT = { sun: "♥", star: "♦", moon: "♣", world: "♠" };
+
+  /* 回合中使用目标型消耗品：凑同花 / 给大牌上增强 */
+  function useTargetedConsumables() {
+    for (const cons of G.consumables.slice()) {
+      const def = api.consumableDef(cons.id);
+      if (!def?.targets || G.state !== "playing") continue;
+      const suit = SUIT_TAROT[def.id];
+      if (suit) {
+        const have = G.hand.filter(x => x.suit === suit).length;
+        const others = G.hand.filter(x => x.suit !== suit);
+        if (have === 4 && others.length) {
+          G.selected.clear();
+          others.sort(byRankDesc).slice(0, Math.min(5 - have, def.targets[1])).forEach(x => G.selected.add(x.id));
+          useConsumable(cons);
+        }
+      } else if (["lovers", "chariot", "justice", "devil", "aura"].includes(def.id)) {
+        const target = G.hand.filter(x => !x.enh).sort(byRankDesc)[0];
+        if (target) {
+          G.selected.clear();
+          G.selected.add(target.id);
+          useConsumable(cons);
+        }
+      }
+    }
+    G.selected.clear();
+  }
 
   function bestSelection(hand, mustFive) {
     const bySuit = {};
@@ -97,8 +126,17 @@ function makeBot(api) {
 
   function botShop() {
     for (const cons of G.consumables.slice()) {
-      const def = TAROT_BY_ID.get(cons.id);
+      const def = api.consumableDef(cons.id);
       if (def.apply) useConsumable(cons);
+    }
+    // 槽满时用弱普通小丑换商店里的高稀有度小丑
+    for (const item of G.shopStock) {
+      if (item.sold || item.kind !== "joker" || G.jokers.length < G.maxJokers) continue;
+      const price = item.def.cost + (item.ed ? api.EDITIONS[item.ed].costUp : 0);
+      if (G.money < price) continue;
+      const worst = G.jokers.slice()
+        .sort((a, b) => RARITY_W[JOKER_BY_ID.get(a.id).rarity] - RARITY_W[JOKER_BY_ID.get(b.id).rarity])[0];
+      if (RARITY_W[item.def.rarity] > RARITY_W[JOKER_BY_ID.get(worst.id).rarity] + 1) sellJoker(worst);
     }
     for (const item of G.shopStock) {
       if (item.sold) continue;
@@ -126,9 +164,26 @@ function makeBot(api) {
     while (G.round < maxRounds) {
       startBlind(G.blindIndex);
       let steps = 0;
-      while (G.state === "playing" && steps++ < 20) {
+      while (G.state === "playing" && steps++ < 24) {
+        useTargetedConsumables();
         const mustFive = G.currentBoss?.id === "psychic";
         let sel = bestSelection(G.hand, mustFive);
+        // 差一张就同花 → 弃掉杂牌抽同花
+        if (!mustFive && sel && sel.length <= 2 && G.discardsLeft > 0 && G.hand.length > 5) {
+          const suitCounts = {};
+          G.hand.forEach(x => suitCounts[x.suit] = (suitCounts[x.suit] || 0) + 1);
+          const flushSuit = Object.keys(suitCounts).find(s => suitCounts[s] === 4);
+          if (flushSuit) {
+            const junk = G.hand.filter(x => x.suit !== flushSuit)
+              .sort((a, b) => RANK_VAL[a.rank] - RANK_VAL[b.rank]).slice(0, 5);
+            if (junk.length) {
+              G.selected.clear();
+              junk.forEach(x => G.selected.add(x.id));
+              discard();
+              continue;
+            }
+          }
+        }
         if (!mustFive && sel && sel.length <= 1 && G.discardsLeft > 0 && G.hand.length > 5) {
           G.selected.clear();
           G.hand.slice().sort((a, b) => RANK_VAL[a.rank] - RANK_VAL[b.rank]).slice(0, 5)

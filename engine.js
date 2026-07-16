@@ -101,6 +101,7 @@ function saveGame() {
       vouchers: G.vouchers, maxJokers: G.maxJokers,
       maxConsumables: G.maxConsumables, interestCap: G.interestCap,
       pendingPack: G.pendingPack,
+      voucherDiscount: G.voucherDiscount, investment: G.investment, doubleTag: G.doubleTag,
       state: G.state === "playing" ? "playing" : "other",
     };
     // 回合中存档：刷新后可从当前手牌继续
@@ -130,7 +131,7 @@ function loadGame() {
     G.blindIndex = d.blindIndex ?? 0;
     G.boss = BOSSES.find(b => b.id === d.bossId) || rnd(BOSSES);
     G.jokers = d.jokers.filter(j => JOKER_BY_ID.has(j.id));
-    G.consumables = (d.consumables || []).filter(c => TAROT_BY_ID.has(c.id));
+    G.consumables = (d.consumables || []).filter(c => consumableDef(c.id));
     Object.assign(G.handLevels, d.handLevels);
     G.handPlayCounts = d.handPlayCounts || {};
     if (Array.isArray(d.masterDeck) && d.masterDeck.length) G.masterDeck = d.masterDeck;
@@ -147,6 +148,9 @@ function loadGame() {
     G.interestCap = d.interestCap ?? 5;
     G.pendingPack = d.pendingPack || null;
     G.deckId = d.deckId || "classic";
+    G.voucherDiscount = !!d.voucherDiscount;
+    G.investment = d.investment || 0;
+    G.doubleTag = d.doubleTag || 0;
     if (d.state === "playing" && d.mid && Array.isArray(d.mid.hand)) {
       Object.assign(G, {
         state: "playing",
@@ -186,6 +190,8 @@ function newGameState(seed) {
     handsLeft: 4, discardsLeft: 3,
     bonusHands: 0, bonusDiscards: 0, freeReroll: 0,
     interestCap: 5, vouchers: [], pendingPack: null,
+    disabledJokerUid: null,                       // 猩红之心禁用的小丑
+    voucherDiscount: false, investment: 0, doubleTag: 0,   // 标签效果
     roundScore: 0, target: 0,
     blindIndex: 0,           // 0 小盲 1 大盲 2 Boss
     boss: null, currentBoss: null,
@@ -254,8 +260,12 @@ function blindTarget(idx) {
   return Math.floor(base * (mults[idx] ?? 1));
 }
 
-function drawToFull() {
-  while (G.hand.length < G.curHandSize && G.deck.length > 0) {
+function drawToFull(initial = false) {
+  // Boss: 蛇 — 出牌/弃牌后只补 3 张（开局发牌不受限）
+  const limit = (!initial && G.currentBoss?.id === "serpent")
+    ? Math.min(G.curHandSize, G.hand.length + 3)
+    : G.curHandSize;
+  while (G.hand.length < limit && G.deck.length > 0) {
     const c = G.deck.pop();
     c.isNew = true;           // 用于发牌动画
     G.hand.push(c);
@@ -276,6 +286,7 @@ function selectedCards() { return G.hand.filter(c => G.selected.has(c.id)); }
 /* ---------- 牌型判定 ---------- */
 function isDebuffed(card) {
   if (!G.currentBoss) return false;
+  if (G.currentBoss.id === "mark") return ["J", "Q", "K"].includes(card.rank);
   const map = { club: "♣", goad: "♠", window: "♦", head: "♥" };
   return map[G.currentBoss.id] === card.suit;
 }
@@ -346,15 +357,17 @@ function handStats(type) {
 /* 蓝图解析：每个小丑的"有效计分定义"。copy:"right" 沿链取右侧第一个非复制小丑。
    返回 [{ j: 原实例(动画/版本用), def: 有效定义, inst: 状态来源实例 }] */
 function scoringJokers(g) {
-  return g.jokers.map((j, i) => {
-    let idx = i, def = JOKER_BY_ID.get(g.jokers[idx].id), guard = 0;
-    while (def?.copy === "right" && guard++ <= g.jokers.length) {
-      idx++;
-      def = g.jokers[idx] ? JOKER_BY_ID.get(g.jokers[idx].id) : null;
-    }
-    if (def?.copy) def = null;   // 复制链没有落点
-    return { j, def, inst: g.jokers[idx] || j };
-  });
+  return g.jokers
+    .filter(j => j.uid !== g.disabledJokerUid)   // 猩红之心禁用的小丑不参与计分
+    .map((j, i, arr) => {
+      let idx = i, def = JOKER_BY_ID.get(arr[idx].id), guard = 0;
+      while (def?.copy === "right" && guard++ <= arr.length) {
+        idx++;
+        def = arr[idx] ? JOKER_BY_ID.get(arr[idx].id) : null;
+      }
+      if (def?.copy) def = null;   // 复制链没有落点
+      return { j, def, inst: arr[idx] || j };
+    });
 }
 
 /* ---------- 纯函数计分 ----------
@@ -376,6 +389,11 @@ function computeScoring(cards, g = G) {
   };
   const sj = scoringJokers(g);
   let chips = stats.chips, mult = stats.mult;
+  // Boss: 燧石 — 牌型基础筹码和倍率减半
+  if (g.currentBoss?.id === "flint") {
+    chips = Math.ceil(chips / 2);
+    mult = Math.ceil(mult / 2);
+  }
   const steps = [];
   const applyEffect = (j, r) => {
     if (r.chips) chips += r.chips;
@@ -451,7 +469,9 @@ function rollShop() {
     G.shopStock.push({ kind: "joker", def: pick, ed: rollEdition(), sold: false });
   }
   G.shopStock.push({ kind: "planet", def: rnd(PLANETS), sold: false });
-  G.shopStock.push({ kind: "tarot", def: rnd(TAROTS), sold: false });
+  // 塔罗位 15% 概率被幻灵牌顶替
+  if (rng() < 0.15) G.shopStock.push({ kind: "spectral", def: rnd(SPECTRALS), sold: false });
+  else G.shopStock.push({ kind: "tarot", def: rnd(TAROTS), sold: false });
   G.shopStock.push({ kind: "pack", def: rnd(PACKS), sold: false });
   const vLeft = VOUCHERS.filter(v => !G.vouchers.includes(v.id));
   if (vLeft.length) G.shopStock.push({ kind: "voucher", def: rnd(vLeft), sold: false });

@@ -68,6 +68,7 @@
       </div>
     </div>
 
+    <button class="small-btn" id="help-btn" data-i18n="help_btn">❓ 玩法说明</button>
     <button class="small-btn" id="run-info-btn" data-i18n="run_info_btn">牌型等级</button>
     <button class="small-btn" id="collection-btn" data-i18n="collection_btn">图鉴</button>
     <button class="small-btn" id="new-run-btn" data-i18n="new_run_btn">重新开局</button>
@@ -185,6 +186,19 @@
     </div>
   </div>
 
+  <!-- ===== 帮助 ===== -->
+  <div class="overlay hidden" id="help">
+    <div class="shop-box help-box">
+      <div class="shop-header" id="help-title"></div>
+      <div id="help-body"></div>
+      <div class="shop-footer">
+        <button class="btn btn-blue" id="help-prev-btn" data-i18n="prev_btn">◀ 上一页</button>
+        <button class="btn btn-blue" id="help-next-btn" data-i18n="next_btn">下一页 ▶</button>
+        <button class="btn btn-orange" id="close-help-btn" data-i18n="close_btn">返回</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== 回合结算 ===== -->
   <div class="overlay hidden" id="cashout">
     <div class="shop-box">
@@ -203,6 +217,7 @@
       <div class="end-detail" id="end-detail"></div>
       <button class="btn btn-orange big hidden" id="endless-btn" data-i18n="endless_btn">♾️ 无尽模式</button>
       <button class="btn btn-blue big" id="restart-btn" data-i18n="restart_btn">再来一局</button>
+      <button class="btn btn-red" id="share-btn" data-i18n="share_btn">🔗 复制分享链接</button>
     </div>
   </div>
 

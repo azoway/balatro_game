@@ -89,10 +89,15 @@ function showBlindSelect() {
   $("shop").classList.add("hidden");
 }
 
-/* 跳过盲注 → 随机标签奖励（放弃奖励金/商店，换一个小补偿） */
+/* 跳过盲注 → 随机标签奖励（放弃奖励金/商店，换一个小补偿）
+   加倍标签：让下一个获得的标签效果再触发一次 */
 function skipBlind() {
   const tag = rnd(SKIP_TAGS);
-  const msg = tag.apply(G);
+  let msg = tag.apply(G);
+  if (tag.id !== "double_tag" && G.doubleTag > 0) {
+    G.doubleTag--;
+    msg += " ×2 (" + tag.apply(G) + ")";
+  }
   G.blindIndex++;
   AudioFX.discard();
   flashMessage(`${tag.icon} ${L(tag.name)}: ${msg}`);
@@ -113,6 +118,7 @@ function startBlind(idx) {
   let handSize = G.handSize;
   if (G.currentBoss) {
     AudioFX.boss();
+    tipOnce("boss", "tip_boss");
     if (G.currentBoss.id === "manacle") handSize -= 1;
     if (G.currentBoss.id === "water") G.maxDiscards = 0;
     if (G.currentBoss.id === "needle") G.maxHands = 1;
@@ -123,7 +129,10 @@ function startBlind(idx) {
   buildDeck();
   G.hand = [];
   G.selected.clear();
-  drawToFull();
+  drawToFull(true);
+  // Boss: 猩红之心 — 每手随机禁用一张小丑牌
+  G.disabledJokerUid = (G.currentBoss?.id === "crimson" && G.jokers.length)
+    ? rnd(G.jokers).uid : null;
   G.state = "playing";
   $("blind-select").classList.add("hidden");
   saveGame();
@@ -273,11 +282,16 @@ async function playHand() {
   }
 
   drawToFull();
+  // Boss: 猩红之心 — 换一张禁用的小丑
+  if (G.currentBoss?.id === "crimson" && G.jokers.length) {
+    G.disabledJokerUid = rnd(G.jokers).uid;
+    renderJokers();
+  }
   G.scoring = false;
   G.speed = 1;
 
   // 胜负判定
-  if (G.roundScore >= G.target) { await winRound(); return; }
+  if (G.roundScore >= G.target) { G.disabledJokerUid = null; await winRound(); return; }
   if (G.handsLeft <= 0) { gameOver(false); return; }
   saveGame();
   render();
@@ -399,6 +413,13 @@ async function winRound() {
   if (G.handsLeft > 0) { lines.push([`${S("hands_left_bonus")} ×${G.handsLeft}`, `$${G.handsLeft}`]); earn += G.handsLeft; }
   const interest = Math.min(G.interestCap, Math.floor(G.money / 5));
   if (interest > 0) { lines.push([S("interest_line", G.interestCap), `$${interest}`]); earn += interest; }
+  // 投资标签：击败 Boss 兑现
+  if (G.blindIndex === 2 && G.investment > 0) {
+    const v = 15 * G.investment;
+    lines.push([`📈 ${S("investment_line")}`, `$${v}`]);
+    earn += v;
+    G.investment = 0;
+  }
   // 手中黄金牌
   const goldCards = G.hand.filter(c => c.enh === "gold");
   if (goldCards.length) {
@@ -449,6 +470,7 @@ function openShop() {
   renderShop();
   $("shop").classList.remove("hidden");
   render();
+  tipOnce("shop", "tip_shop");
 }
 
 function makeShopMiniCard(cls, icon, name, desc) {
@@ -473,11 +495,14 @@ function renderShop() {
     } else if (item.kind === "tarot") {
       price = item.def.cost;
       cardEl = makeShopMiniCard("tarot-card", item.def.icon, L(item.def.name), L(item.def.desc));
+    } else if (item.kind === "spectral") {
+      price = item.def.cost;
+      cardEl = makeShopMiniCard("spectral-card", item.def.icon, L(item.def.name), L(item.def.desc));
     } else if (item.kind === "pack") {
       price = item.def.cost;
       cardEl = makeShopMiniCard("pack-card", item.def.icon, L(item.def.name), L(item.def.desc));
     } else if (item.kind === "voucher") {
-      price = item.def.cost;
+      price = G.voucherDiscount ? Math.ceil(item.def.cost / 2) : item.def.cost;   // 折扣标签
       cardEl = makeShopMiniCard("voucher-card", item.def.icon, L(item.def.name), L(item.def.desc));
     } else {
       price = 3;
@@ -493,7 +518,7 @@ function renderShop() {
     buyBtn.textContent = item.sold ? S("sold_out") : S("buy_btn");
     buyBtn.disabled = item.sold || G.money < price ||
       (item.kind === "joker" && G.jokers.length >= G.maxJokers) ||
-      (item.kind === "tarot" && G.consumables.length >= G.maxConsumables);
+      ((item.kind === "tarot" || item.kind === "spectral") && G.consumables.length >= G.maxConsumables);
     buyBtn.onclick = () => buyItem(item, price);
     wrap.append(priceEl, cardEl, buyBtn);
     box.appendChild(wrap);
@@ -504,20 +529,22 @@ function renderShop() {
 
 function buyItem(item, price) {
   if (G.money < price || item.sold) return;
-  if (item.kind === "tarot" && G.consumables.length >= G.maxConsumables) return;
+  if ((item.kind === "tarot" || item.kind === "spectral") && G.consumables.length >= G.maxConsumables) return;
   G.money -= price;
   item.sold = true;
   AudioFX.buy();
   if (item.kind === "joker") {
     G.jokers.push({ id: item.def.id, uid: "j" + Date.now() + Math.random().toString(36).slice(2, 5), ed: item.ed || undefined });
-  } else if (item.kind === "tarot") {
+  } else if (item.kind === "tarot" || item.kind === "spectral") {
     G.consumables.push({ id: item.def.id, uid: "t" + Date.now() + Math.random().toString(36).slice(2, 5) });
+    if (item.def.targets) tipOnce("tarot", "tip_tarot");
   } else if (item.kind === "pack") {
     openPack(item.def.kind);
     showPackOverlay();
   } else if (item.kind === "voucher") {
     item.def.apply(G);
     G.vouchers.push(item.def.id);
+    G.voucherDiscount = false;   // 折扣标签一次性
     flashMessage(`${item.def.icon} ${L(item.def.name)}: ${L(item.def.desc)}`);
   } else {
     G.handLevels[item.def.hand]++;
@@ -606,7 +633,7 @@ function moveJoker(j, dir) {
 /* ---------- 消耗品（塔罗）使用 ---------- */
 function useConsumable(cons) {
   if (G.scoring) return false;
-  const def = TAROT_BY_ID.get(cons.id);
+  const def = consumableDef(cons.id);
   let msg;
   if (def.targets) {
     if (G.state !== "playing") { flashMessage(S("only_in_round")); return false; }
@@ -620,6 +647,7 @@ function useConsumable(cons) {
     G.selected.clear();
   } else {
     msg = def.apply(G);
+    if (msg === null) { flashMessage(S("cannot_use")); return false; }   // 幻灵牌条件不满足，不消耗
   }
   G.consumables = G.consumables.filter(x => x !== cons);
   AudioFX.buy();
@@ -632,9 +660,9 @@ function useConsumable(cons) {
 }
 
 function makeConsumableEl(cons) {
-  const def = TAROT_BY_ID.get(cons.id);
+  const def = consumableDef(cons.id);
   const el = document.createElement("div");
-  el.className = "consumable";
+  el.className = "consumable" + (def.spectral ? " spectral" : "");
   el.dataset.uid = cons.uid;
   el.innerHTML = `<div class="c-icon">${def.icon}</div><div class="c-name">${L(def.name)}</div>`;
   el.onmouseenter = e => showTarotTip(e, def);
@@ -715,6 +743,33 @@ function showCollection() {
   $("collection").classList.remove("hidden");
 }
 
+/* ---------- 帮助 / 新手引导 ---------- */
+let _helpPage = 0;
+function showHelp(page = 0) {
+  _helpPage = Math.max(0, Math.min(HELP_PAGES.length - 1, page));
+  const p = HELP_PAGES[_helpPage];
+  $("help-title").textContent = `${L(p.title)} (${_helpPage + 1}/${HELP_PAGES.length})`;
+  $("help-body").innerHTML = L(p.body);
+  $("help-prev-btn").disabled = _helpPage === 0;
+  $("help-next-btn").disabled = _helpPage === HELP_PAGES.length - 1;
+  $("help").classList.remove("hidden");
+}
+
+/* 一次性情境提示（每个 key 整个浏览器只弹一次） */
+const TIPS_KEY = "joker_tips_v1";
+function tipOnce(key, msgKey) {
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem(TIPS_KEY)) || {}; } catch (e) { /* 忽略 */ }
+  if (seen[key]) return;
+  seen[key] = 1;
+  try { localStorage.setItem(TIPS_KEY, JSON.stringify(seen)); } catch (e) { /* 忽略 */ }
+  const el = document.createElement("div");
+  el.className = "flash-msg tip-msg";
+  el.textContent = S(msgKey);
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 6500);
+}
+
 /* ---------- 结束 ---------- */
 function runStatsHTML() {
   const played = Object.entries(G.handPlayCounts).sort((a, b) => b[1] - a[1]);
@@ -740,6 +795,21 @@ function gameOver(win) {
     + runStatsHTML();
   $("endless-btn").classList.toggle("hidden", !win);
   $("end-screen").classList.remove("hidden");
+}
+
+/* 分享链接：?seed=xxx&deck=yyy 打开即可复现同一局 */
+function shareLink() {
+  if (typeof location === "undefined") return "";
+  return `${location.origin}${location.pathname}?seed=${G.seed}&deck=${G.deckId || "classic"}`;
+}
+async function copyShareLink() {
+  const url = shareLink();
+  try {
+    await navigator.clipboard.writeText(url);
+    flashMessage(S("share_copied"));
+  } catch (e) {
+    window.prompt?.(S("share_manual"), url);
+  }
 }
 
 /* ---------- 卡面渲染 ---------- */
@@ -895,7 +965,7 @@ function showTooltip(e, def, isShop, ed) {
 function showTarotTip(e, def) {
   const tt = $("tooltip");
   tt.innerHTML = `<div class="tt-title">${def.icon} ${L(def.name)}</div>
-    <div class="tt-rarity uncommon">${S("tarot_label")}</div>
+    <div class="tt-rarity ${def.spectral ? "rare" : "uncommon"}">${def.spectral ? S("spectral_label") : S("tarot_label")}</div>
     <div class="tt-desc">${L(def.desc)}</div>
     <div class="tt-sell">${def.targets ? S("select_first_use") : S("click_use")}</div>`;
   tt.classList.remove("hidden");
@@ -918,7 +988,11 @@ function cancelSellConfirm(el) {
 function renderJokers() {
   const box = $("jokers");
   box.innerHTML = "";
-  G.jokers.forEach(j => box.appendChild(makeJokerEl(j)));
+  G.jokers.forEach(j => {
+    const el = makeJokerEl(j);
+    if (j.uid === G.disabledJokerUid) el.classList.add("debuffed");
+    box.appendChild(el);
+  });
   for (let i = G.jokers.length; i < G.maxJokers; i++) {
     const s = document.createElement("div");
     s.className = "empty-slot";
@@ -1051,6 +1125,11 @@ $("sort-rank").onclick = () => { sortHand("rank"); render(); };
 $("sort-suit").onclick = () => { sortHand("suit"); render(); };
 $("run-info-btn").onclick = showRunInfo;
 $("collection-btn").onclick = showCollection;
+$("help-btn").onclick = () => showHelp(0);
+$("close-help-btn").onclick = () => $("help").classList.add("hidden");
+$("help-prev-btn").onclick = () => showHelp(_helpPage - 1);
+$("help-next-btn").onclick = () => showHelp(_helpPage + 1);
+$("share-btn").onclick = copyShareLink;
 $("close-collection-btn").onclick = () => $("collection").classList.add("hidden");
 bindConfirmButton($("new-run-btn"), "new_run_btn", () => showDeckSelect());
 bindConfirmButton($("daily-btn"), "daily_btn", () => showDeckSelect(todaySeed()));
@@ -1117,6 +1196,12 @@ $("hand").onclick = e => {
 /* 3D 倾斜：全局委托 */
 $("game").addEventListener("pointermove", handleTiltMove);
 
+/* 点击按钮后立即失焦：避免随后的 Enter/空格 重复触发按钮而不是快捷键 */
+document.addEventListener("click", e => {
+  const btn = e.target?.closest?.("button");
+  if (btn) btn.blur?.();
+});
+
 /* 计分中点击任意处 → 4 倍速快进；触屏点空白处收起 tooltip */
 document.addEventListener("pointerdown", e => {
   if (G.scoring && G.speed === 1) {
@@ -1142,7 +1227,7 @@ document.addEventListener("keydown", e => {
   }
   // 信息类弹层用 Esc 关闭
   if (e.key === "Escape") {
-    ["run-info", "deck-view", "collection", "deck-select"].forEach(id => $(id).classList.add("hidden"));
+    ["run-info", "deck-view", "collection", "deck-select", "help"].forEach(id => $(id).classList.add("hidden"));
     if (G.pendingPack) { skipPack(); $("pack-open").classList.add("hidden"); saveGame(); }
     else if (G.state === "playing" && !G.scoring && G.selected.size) { G.selected.clear(); render(); }
     return;
@@ -1185,6 +1270,23 @@ if (typeof navigator !== "undefined" && "serviceWorker" in navigator &&
   navigator.serviceWorker.register("sw.js").catch(() => { /* 离线支持是增强项 */ });
 }
 
-/* ---------- 启动 ---------- */
+/* ---------- 启动 ----------
+   支持 ?seed=xxx&deck=yyy 深链：与存档种子不同时开新局复现 */
 applyStaticText();
-if (!loadGame()) newGame();
+(function boot() {
+  let urlSeed = null, urlDeck = "classic";
+  try {
+    if (typeof location !== "undefined" && location.search) {
+      const params = new URLSearchParams(location.search);
+      const s = params.get("seed");
+      if (s) urlSeed = /^\d+$/.test(s) ? (parseInt(s, 10) >>> 0) : hashStr(s);
+      urlDeck = params.get("deck") || "classic";
+    }
+  } catch (e) { /* 忽略 */ }
+  const restored = loadGame();
+  if (urlSeed !== null && (!restored || G.seed !== urlSeed)) {
+    startFreshGame(urlSeed, urlDeck);
+  } else if (!restored) {
+    newGame();
+  }
+})();

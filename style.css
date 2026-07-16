@@ -1226,3 +1226,47 @@ body::after {
   pointer-events: none;
 }
 .dv-card b { position: absolute; top: -6px; left: -4px; font-size: 8px; color: #0092e0; }
+
+/* ===== 幻灵牌 ===== */
+.spectral-card, .consumable.spectral {
+  background: linear-gradient(160deg, #2a1a4e, #0e0a2e);
+  border-color: #7a5ae0;
+}
+.spectral-card .p-name { color: #b9a0ff; }
+.spectral-card .p-icon, .consumable.spectral .c-icon { filter: drop-shadow(0 0 8px rgba(150,110,255,.8)); }
+
+/* ===== 被禁用的小丑（猩红之心） ===== */
+.joker.debuffed { filter: grayscale(1) brightness(.55); }
+.joker.debuffed::after {
+  content: "🚫";
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  z-index: 6;
+}
+
+/* ===== 帮助 / 引导 ===== */
+.help-box { max-width: 620px; }
+#help-body {
+  font-size: 14px;
+  line-height: 1.75;
+  color: rgba(255,255,255,.88);
+  max-width: 560px;
+  max-height: 56vh;
+  overflow-y: auto;
+  text-align: left;
+}
+#help-body b { color: #f7d774; }
+#help-body .hb {
+  background: rgba(0,146,224,.25);
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-weight: 900;
+}
+.tip-msg {
+  background: rgba(10, 40, 70, .96);
+  border: 1px solid #4a90d0;
+  font-size: 14px;
+}
+#share-btn { margin-top: 10px; }
