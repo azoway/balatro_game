@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#0a1a16">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,8 +20,8 @@
       <div class="blind-body">
         <div class="blind-chip" id="blind-chip"></div>
         <div class="blind-info">
-          <div class="blind-target-label">目标分数</div>
-          <div class="blind-target" id="blind-target">300</div>
+          <div class="blind-target-label" data-i18n="target_label">目标分数</div>
+          <div class="blind-target" id="blind-target">100</div>
           <div class="blind-reward" id="blind-reward"></div>
         </div>
       </div>
@@ -28,7 +29,7 @@
     </div>
 
     <div class="panel score-panel">
-      <div class="score-label">回合分数</div>
+      <div class="score-label" data-i18n="round_score_label">回合分数</div>
       <div class="round-score" id="round-score">0</div>
     </div>
 
@@ -43,11 +44,11 @@
 
     <div class="stats-row">
       <div class="panel stat">
-        <div class="stat-label">出牌</div>
+        <div class="stat-label" data-i18n="hands_label">出牌</div>
         <div class="stat-value blue" id="hands-left">4</div>
       </div>
       <div class="panel stat">
-        <div class="stat-label">弃牌</div>
+        <div class="stat-label" data-i18n="discards_label">弃牌</div>
         <div class="stat-value red" id="discards-left">3</div>
       </div>
     </div>
@@ -58,31 +59,33 @@
 
     <div class="stats-row">
       <div class="panel stat">
-        <div class="stat-label">底注</div>
+        <div class="stat-label" data-i18n="ante_label">底注</div>
         <div class="stat-value orange"><span id="ante">1</span><span class="dim">/8</span></div>
       </div>
       <div class="panel stat">
-        <div class="stat-label">回合</div>
+        <div class="stat-label" data-i18n="round_label">回合</div>
         <div class="stat-value orange" id="round">0</div>
       </div>
     </div>
 
-    <button class="small-btn" id="run-info-btn">牌型等级</button>
-    <button class="small-btn" id="new-run-btn">重新开局</button>
-    <button class="small-btn" id="daily-btn">今日挑战</button>
+    <button class="small-btn" id="run-info-btn" data-i18n="run_info_btn">牌型等级</button>
+    <button class="small-btn" id="collection-btn" data-i18n="collection_btn">图鉴</button>
+    <button class="small-btn" id="new-run-btn" data-i18n="new_run_btn">重新开局</button>
+    <button class="small-btn" id="daily-btn" data-i18n="daily_btn">今日挑战</button>
+    <button class="small-btn" id="lang-btn">English</button>
     <div class="hotkeys seed-line" id="seed-line" title="点击输入自定义种子">种子 -</div>
-    <div class="hotkeys">快捷键: 1-9选牌 · Enter出牌 · X弃牌 · R/S排序 · M静音 · 计分中点击加速</div>
+    <div class="hotkeys" data-i18n="hotkeys">快捷键: 1-9选牌 · Enter出牌 · X弃牌 · R/S排序 · M静音 · 计分中点击加速</div>
   </aside>
 
   <!-- ===== 主区域 ===== -->
   <main id="main">
     <div id="joker-row">
       <div id="joker-sec">
-        <div class="row-label">小丑牌 <span id="joker-count">0/5</span></div>
+        <div class="row-label"><span data-i18n="jokers_label">小丑牌</span> <span id="joker-count">0/5</span></div>
         <div id="jokers"></div>
       </div>
       <div id="consumable-sec">
-        <div class="row-label">消耗品 <span id="consumable-count">0/2</span></div>
+        <div class="row-label"><span data-i18n="consumables_label">消耗品</span> <span id="consumable-count">0/2</span></div>
         <div id="consumables"></div>
       </div>
     </div>
@@ -91,15 +94,15 @@
 
     <div id="hand-area">
       <div id="hand"></div>
-      <div id="deck-info">牌库 <span id="deck-count">44/52</span></div>
+      <div id="deck-info" title="点击查看牌库"><span data-i18n="deck_label">牌库</span> <span id="deck-count">44/52</span></div>
     </div>
 
     <div id="controls">
       <button class="btn btn-blue" id="play-btn" disabled>出牌</button>
       <div id="sort-btns">
-        <div class="sort-label">排序</div>
-        <button class="btn btn-orange small" id="sort-rank">点数</button>
-        <button class="btn btn-orange small" id="sort-suit">花色</button>
+        <div class="sort-label" data-i18n="sort_label">排序</div>
+        <button class="btn btn-orange small" id="sort-rank" data-i18n="sort_rank_btn">点数</button>
+        <button class="btn btn-orange small" id="sort-suit" data-i18n="sort_suit_btn">花色</button>
       </div>
       <button class="btn btn-red" id="discard-btn" disabled>弃牌</button>
     </div>
@@ -107,18 +110,29 @@
 
   <!-- ===== 盲注选择 ===== -->
   <div class="overlay" id="blind-select">
-    <div class="overlay-title">选择盲注</div>
+    <div class="overlay-title" data-i18n="blind_select_title">选择盲注</div>
     <div id="blind-options"></div>
   </div>
 
   <!-- ===== 商店 ===== -->
   <div class="overlay hidden" id="shop">
     <div class="shop-box">
-      <div class="shop-header">🛒 商 店</div>
+      <div class="shop-header" data-i18n="shop_title">🛒 商 店</div>
       <div id="shop-items"></div>
       <div class="shop-footer">
         <button class="btn btn-red" id="reroll-btn">刷新 $5</button>
-        <button class="btn btn-orange" id="next-round-btn">下一回合 ➜</button>
+        <button class="btn btn-orange" id="next-round-btn" data-i18n="next_round_btn">下一回合 ➜</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 卡包开启 ===== -->
+  <div class="overlay hidden" id="pack-open">
+    <div class="shop-box">
+      <div class="shop-header" id="pack-title"></div>
+      <div id="pack-choices"></div>
+      <div class="shop-footer">
+        <button class="btn btn-red" id="pack-skip-btn" data-i18n="pack_skip_btn">放弃卡包</button>
       </div>
     </div>
   </div>
@@ -126,10 +140,34 @@
   <!-- ===== 牌型等级 ===== -->
   <div class="overlay hidden" id="run-info">
     <div class="shop-box">
-      <div class="shop-header">牌型等级</div>
+      <div class="shop-header" data-i18n="hand_levels_title">牌型等级</div>
       <div id="hand-levels"></div>
       <div class="shop-footer">
-        <button class="btn btn-orange" id="close-info-btn">返回</button>
+        <button class="btn btn-orange" id="close-info-btn" data-i18n="close_btn">返回</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 牌库一览 ===== -->
+  <div class="overlay hidden" id="deck-view">
+    <div class="shop-box">
+      <div class="shop-header" data-i18n="deck_view_title">牌库一览</div>
+      <div class="dv-hint" id="deck-view-hint"></div>
+      <div id="deck-grid"></div>
+      <div class="shop-footer">
+        <button class="btn btn-orange" id="close-deck-btn" data-i18n="close_btn">返回</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 图鉴 / 战绩 ===== -->
+  <div class="overlay hidden" id="collection">
+    <div class="shop-box">
+      <div class="shop-header" data-i18n="collection_title">图鉴 · 战绩</div>
+      <div class="dv-hint" id="collection-stats"></div>
+      <div id="collection-grid"></div>
+      <div class="shop-footer">
+        <button class="btn btn-orange" id="close-collection-btn" data-i18n="close_btn">返回</button>
       </div>
     </div>
   </div>
@@ -137,7 +175,7 @@
   <!-- ===== 回合结算 ===== -->
   <div class="overlay hidden" id="cashout">
     <div class="shop-box">
-      <div class="shop-header gold">回合胜利!</div>
+      <div class="shop-header gold" data-i18n="round_won_title">回合胜利!</div>
       <div id="cashout-lines"></div>
       <div class="shop-footer">
         <button class="btn btn-orange big" id="cashout-btn">收取</button>
@@ -150,13 +188,14 @@
     <div class="end-box" id="end-box">
       <div class="end-title" id="end-title">游戏结束</div>
       <div class="end-detail" id="end-detail"></div>
-      <button class="btn btn-orange big hidden" id="endless-btn">♾️ 无尽模式</button>
-      <button class="btn btn-blue big" id="restart-btn">再来一局</button>
+      <button class="btn btn-orange big hidden" id="endless-btn" data-i18n="endless_btn">♾️ 无尽模式</button>
+      <button class="btn btn-blue big" id="restart-btn" data-i18n="restart_btn">再来一局</button>
     </div>
   </div>
 
   <div id="tooltip" class="hidden"></div>
 </div>
+<script src="i18n.js"></script>
 <script src="defs.js"></script>
 <script src="engine.js"></script>
 <script src="ui.js"></script>

@@ -1,5 +1,5 @@
 /* =========================================================
-   小丑牌 · JOKER — 引擎（RNG / 状态 / 存档 / 牌型判定 / 计分）
+   小丑牌 · JOKER — 引擎（RNG / 状态 / 存档 / 牌型判定 / 计分 / 卡包 / 统计）
    不直接操作 DOM；loadGame/newGame 等在启动后才会调用 ui 层函数。
    ========================================================= */
 "use strict";
@@ -29,6 +29,30 @@ const todaySeed = () => hashStr("joker-" + new Date().toLocaleDateString("sv"));
 /* ---------- 游戏状态 ---------- */
 const G = {};
 
+/* ---------- 跨局统计 / 图鉴（独立于单局存档） ---------- */
+const STATS_KEY = "joker_stats_v1";
+function loadStats() {
+  try { return JSON.parse(localStorage.getItem(STATS_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+function saveStats(s) {
+  try { localStorage.setItem(STATS_KEY, JSON.stringify(s)); } catch (e) { /* 忽略 */ }
+}
+function markJokersSeen(ids) {
+  if (!ids.length) return;
+  const s = loadStats();
+  s.seenJokers = [...new Set([...(s.seenJokers || []), ...ids])];
+  saveStats(s);
+}
+function recordGameEnd(win) {
+  const s = loadStats();
+  s.games = (s.games || 0) + 1;
+  if (win) s.wins = (s.wins || 0) + 1;
+  s.bestAnte = Math.max(s.bestAnte || 0, G.endless ? G.ante : Math.min(G.ante, MAX_ANTE));
+  if (G.bestHand) s.bestScore = Math.max(s.bestScore || 0, G.bestHand.total);
+  saveStats(s);
+}
+
 /* ---------- 存档 ---------- */
 const SAVE_KEY = "joker_save_v1";
 
@@ -36,7 +60,7 @@ function saveGame() {
   if (G.state === "over") { localStorage.removeItem(SAVE_KEY); return; }
   try {
     const data = {
-      v: 3,
+      v: 4,
       money: G.money, ante: G.ante, round: G.round,
       blindIndex: G.blindIndex, bossId: G.boss?.id,
       jokers: G.jokers.map(j => ({ id: j.id, uid: j.uid, state: j.state })),
@@ -47,6 +71,9 @@ function saveGame() {
       handSize: G.handSize, bonusHands: G.bonusHands,
       bonusDiscards: G.bonusDiscards, freeReroll: G.freeReroll,
       seenBosses: G.seenBosses, endless: G.endless, bestHand: G.bestHand,
+      vouchers: G.vouchers, maxJokers: G.maxJokers,
+      maxConsumables: G.maxConsumables, interestCap: G.interestCap,
+      pendingPack: G.pendingPack,
       state: G.state === "playing" ? "playing" : "other",
     };
     // 回合中存档：刷新后可从当前手牌继续
@@ -87,6 +114,11 @@ function loadGame() {
     G.seenBosses = Array.isArray(d.seenBosses) ? d.seenBosses : [];
     G.endless = !!d.endless;
     G.bestHand = d.bestHand || null;
+    G.vouchers = (d.vouchers || []).filter(id => VOUCHER_BY_ID.has(id));
+    G.maxJokers = d.maxJokers ?? 5;
+    G.maxConsumables = d.maxConsumables ?? 2;
+    G.interestCap = d.interestCap ?? 5;
+    G.pendingPack = d.pendingPack || null;
     if (d.state === "playing" && d.mid && Array.isArray(d.mid.hand)) {
       Object.assign(G, {
         state: "playing",
@@ -101,12 +133,13 @@ function loadGame() {
       $("blind-select").classList.add("hidden");
       $("shop").classList.add("hidden");
       render();
-      flashMessage("📂 已恢复上局进度");
+      flashMessage(S("msg_restored"));
     } else {
       showBlindSelect();
       render();
-      flashMessage("📂 已恢复上局进度（回到盲注选择）");
+      flashMessage(S("msg_restored_blind"));
     }
+    if (G.pendingPack) showPackOverlay();   // 开包途中刷新，恢复选择界面
     return true;
   } catch (e) { return false; }
 }
@@ -124,6 +157,7 @@ function newGameState(seed) {
     handSize: 8, maxHands: 4, maxDiscards: 3,
     handsLeft: 4, discardsLeft: 3,
     bonusHands: 0, bonusDiscards: 0, freeReroll: 0,
+    interestCap: 5, vouchers: [], pendingPack: null,
     roundScore: 0, target: 0,
     blindIndex: 0,           // 0 小盲 1 大盲 2 Boss
     boss: null, currentBoss: null,
@@ -272,7 +306,8 @@ function handStats(type) {
 
 /* ---------- 纯函数计分 ----------
    不触碰 DOM / 音效 / 动画，返回完整的计分步骤序列，
-   playHand 只负责按步骤播放，测试可直接断言 total。 */
+   playHand 只负责按步骤播放，测试可直接断言 total。
+   顺序: 牌型基础 → 逐卡(含小丑 perCard) → 手中钢铁牌 → 小丑 after */
 function computeScoring(cards, g = G) {
   const ev = evaluate(cards);
   const stats = handStats(ev.type);
@@ -306,6 +341,11 @@ function computeScoring(cards, g = G) {
       if (r) applyEffect(j, r);
     }
   }
+  // 手中钢铁牌（未打出、留在手里的）
+  for (const hc of g.hand.filter(c => c.enh === "steel")) {
+    mult = Math.round(mult * ENH_STEEL_X * 100) / 100;
+    steps.push({ kind: "held", card: hc, xmult: ENH_STEEL_X, chips, mult });
+  }
   for (const j of g.jokers) {
     const def = JOKER_BY_ID.get(j.id);
     if (!def?.after) continue;
@@ -321,7 +361,8 @@ function rollShop() {
   const owned = new Set(G.jokers.map(j => j.id));
   const pool = JOKER_DEFS.filter(d => !owned.has(d.id));
   const weights = { common: 12, uncommon: 5, rare: 2, legendary: 1 };
-  for (let i = 0; i < 2 && pool.length; i++) {
+  const jokerCount = G.vouchers.includes("overstock") ? 3 : 2;
+  for (let i = 0; i < jokerCount && pool.length; i++) {
     const bag = [];
     pool.forEach(d => { for (let w = 0; w < weights[d.rarity]; w++) bag.push(d); });
     const pick = rnd(bag);
@@ -330,4 +371,45 @@ function rollShop() {
   }
   G.shopStock.push({ kind: "planet", def: rnd(PLANETS), sold: false });
   G.shopStock.push({ kind: "tarot", def: rnd(TAROTS), sold: false });
+  G.shopStock.push({ kind: "pack", def: rnd(PACKS), sold: false });
+  const vLeft = VOUCHERS.filter(v => !G.vouchers.includes(v.id));
+  if (vLeft.length) G.shopStock.push({ kind: "voucher", def: rnd(vLeft), sold: false });
+  markJokersSeen(G.shopStock.filter(i => i.kind === "joker").map(i => i.def.id));
 }
+
+/* ---------- 卡包 ---------- */
+function openPack(kind) {
+  let pool;
+  if (kind === "arcana") pool = TAROTS.slice();
+  else if (kind === "celestial") pool = PLANETS.slice();
+  else pool = JOKER_DEFS.filter(d => !G.jokers.some(j => j.id === d.id));
+  const choices = [];
+  for (let i = 0; i < 3 && pool.length; i++) {
+    const pick = rnd(pool);
+    pool.splice(pool.indexOf(pick), 1);
+    choices.push(pick.id);
+  }
+  G.pendingPack = { kind, choices };
+  if (kind === "buffoon") markJokersSeen(choices);
+}
+
+/* 返回 true=成功；"full"=槽位已满；false=无效 */
+function choosePackOption(i) {
+  const pk = G.pendingPack;
+  if (!pk || pk.choices[i] == null) return false;
+  const id = pk.choices[i];
+  if (pk.kind === "arcana") {
+    if (G.consumables.length >= G.maxConsumables) return "full";
+    G.consumables.push({ id, uid: "t" + Date.now() + Math.random().toString(36).slice(2, 5) });
+  } else if (pk.kind === "celestial") {
+    const def = PLANETS.find(p => p.id === id);
+    G.handLevels[def.hand]++;
+  } else {
+    if (G.jokers.length >= G.maxJokers) return "full";
+    G.jokers.push({ id, uid: "j" + Date.now() + Math.random().toString(36).slice(2, 5) });
+  }
+  G.pendingPack = null;
+  return true;
+}
+
+function skipPack() { G.pendingPack = null; }

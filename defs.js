@@ -1,27 +1,33 @@
 /* =========================================================
-   小丑牌 · JOKER — 数据定义（牌型 / Boss / 小丑 / 星球 / 塔罗 / 标签）
-   加载顺序: defs.js → engine.js → ui.js
+   小丑牌 · JOKER — 数据定义（牌型 / Boss / 小丑 / 星球 / 塔罗 / 卡包 / 优惠券 / 标签）
+   name/desc 为 {zh, en} 双语对象，渲染时经 i18n.js 的 L() 取当前语言。
+   加载顺序: i18n.js → defs.js → engine.js → ui.js
    ========================================================= */
 "use strict";
 
 /* ---------- 扑克常量 ---------- */
 const SUITS = ["♠", "♥", "♣", "♦"];
-const SUIT_NAME = { "♠": "黑桃", "♥": "红桃", "♣": "梅花", "♦": "方片" };
+const SUIT_NAME = {
+  "♠": { zh: "黑桃", en: "Spades" },
+  "♥": { zh: "红桃", en: "Hearts" },
+  "♣": { zh: "梅花", en: "Clubs" },
+  "♦": { zh: "方片", en: "Diamonds" },
+};
 const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
 const RANK_VAL = Object.fromEntries(RANKS.map((r, i) => [r, i + 2]));
 const CHIP_VAL = r => r === "A" ? 11 : (RANK_VAL[r] >= 11 ? 10 : RANK_VAL[r]);
 
 const HAND_TYPES = {
-  flush_five:     { name: "同花五条", chips: 160, mult: 16, up: [50, 3] },
-  straight_flush: { name: "同花顺",   chips: 100, mult: 8,  up: [40, 4] },
-  four_kind:      { name: "四条",     chips: 60,  mult: 7,  up: [30, 3] },
-  full_house:     { name: "葫芦",     chips: 40,  mult: 4,  up: [25, 2] },
-  flush:          { name: "同花",     chips: 35,  mult: 4,  up: [15, 2] },
-  straight:       { name: "顺子",     chips: 30,  mult: 4,  up: [30, 3] },
-  three_kind:     { name: "三条",     chips: 30,  mult: 3,  up: [20, 2] },
-  two_pair:       { name: "两对",     chips: 20,  mult: 2,  up: [20, 1] },
-  pair:           { name: "对子",     chips: 10,  mult: 2,  up: [15, 1] },
-  high_card:      { name: "高牌",     chips: 5,   mult: 1,  up: [10, 1] },
+  flush_five:     { name: { zh: "同花五条", en: "Flush Five" },      chips: 160, mult: 16, up: [50, 3] },
+  straight_flush: { name: { zh: "同花顺",   en: "Straight Flush" },  chips: 100, mult: 8,  up: [40, 4] },
+  four_kind:      { name: { zh: "四条",     en: "Four of a Kind" },  chips: 60,  mult: 7,  up: [30, 3] },
+  full_house:     { name: { zh: "葫芦",     en: "Full House" },      chips: 40,  mult: 4,  up: [25, 2] },
+  flush:          { name: { zh: "同花",     en: "Flush" },           chips: 35,  mult: 4,  up: [15, 2] },
+  straight:       { name: { zh: "顺子",     en: "Straight" },        chips: 30,  mult: 4,  up: [30, 3] },
+  three_kind:     { name: { zh: "三条",     en: "Three of a Kind" }, chips: 30,  mult: 3,  up: [20, 2] },
+  two_pair:       { name: { zh: "两对",     en: "Two Pair" },        chips: 20,  mult: 2,  up: [20, 1] },
+  pair:           { name: { zh: "对子",     en: "Pair" },            chips: 10,  mult: 2,  up: [15, 1] },
+  high_card:      { name: { zh: "高牌",     en: "High Card" },       chips: 5,   mult: 1,  up: [10, 1] },
 };
 
 const ANTE_BASE = [100, 300, 800, 2000, 5000, 11000, 20000, 35000, 50000];
@@ -30,136 +36,193 @@ const MAX_ANTE = 8;
 const ENDLESS_GROWTH = 2.5;
 
 /* ---------- 卡牌增强 ---------- */
-const ENH_CHIPS = 30;
-const ENH_MULT = 4;
+const ENH_CHIPS = 30;      // 加成牌：计分时额外筹码
+const ENH_MULT = 4;        // 倍率牌：计分时额外倍率
+const ENH_STEEL_X = 1.5;   // 钢铁牌：留在手中时倍率乘数
+const ENH_GOLD_MONEY = 3;  // 黄金牌：回合结束仍在手中时得钱
 const ENH = {
-  bonus: { name: "加成牌", icon: "🔷", desc: `计分时 +${ENH_CHIPS} 筹码` },
-  mult:  { name: "倍率牌", icon: "🔺", desc: `计分时 +${ENH_MULT} 倍率` },
+  bonus: { name: { zh: "加成牌", en: "Bonus Card" }, icon: "🔷",
+    desc: { zh: `计分时 +${ENH_CHIPS} 筹码`, en: `+${ENH_CHIPS} Chips when scored` } },
+  mult:  { name: { zh: "倍率牌", en: "Mult Card" }, icon: "🔺",
+    desc: { zh: `计分时 +${ENH_MULT} 倍率`, en: `+${ENH_MULT} Mult when scored` } },
+  steel: { name: { zh: "钢铁牌", en: "Steel Card" }, icon: "🛡",
+    desc: { zh: `留在手中时 ×${ENH_STEEL_X} 倍率`, en: `×${ENH_STEEL_X} Mult while held in hand` } },
+  gold:  { name: { zh: "黄金牌", en: "Gold Card" }, icon: "💰",
+    desc: { zh: `回合结束时若在手中 +$${ENH_GOLD_MONEY}`, en: `+$${ENH_GOLD_MONEY} if held in hand at end of round` } },
+};
+
+const RARITY_NAME = {
+  common:    { zh: "普通", en: "Common" },
+  uncommon:  { zh: "罕见", en: "Uncommon" },
+  rare:      { zh: "稀有", en: "Rare" },
+  legendary: { zh: "传奇", en: "Legendary" },
 };
 
 /* ---------- Boss 盲注 ---------- */
 const BOSSES = [
-  { id: "hook",   name: "钩子",   desc: "每次出牌后随机弃掉 2 张手牌", icon: "🪝" },
-  { id: "club",   name: "梅花",   desc: "所有梅花牌被禁用（不计分）", icon: "♣" },
-  { id: "goad",   name: "刺棒",   desc: "所有黑桃牌被禁用（不计分）", icon: "♠" },
-  { id: "window", name: "窗户",   desc: "所有方片牌被禁用（不计分）", icon: "♦" },
-  { id: "head",   name: "头颅",   desc: "所有红桃牌被禁用（不计分）", icon: "♥" },
-  { id: "psychic",name: "通灵者", desc: "每次必须打出 5 张牌", icon: "🔮" },
-  { id: "manacle",name: "镣铐",   desc: "手牌上限 -1", icon: "⛓" },
-  { id: "water",  name: "流水",   desc: "本回合弃牌次数为 0", icon: "💧" },
-  { id: "needle", name: "针头",   desc: "本回合只能出 1 次牌", icon: "💉" },
-  { id: "wall",   name: "高墙",   desc: "目标分数特别高", icon: "🧱" },
+  { id: "hook",   icon: "🪝", name: { zh: "钩子", en: "The Hook" },
+    desc: { zh: "每次出牌后随机弃掉 2 张手牌", en: "Discards 2 random held cards after each played hand" } },
+  { id: "club",   icon: "♣", name: { zh: "梅花", en: "The Club" },
+    desc: { zh: "所有梅花牌被禁用（不计分）", en: "All Club cards are debuffed (no score)" } },
+  { id: "goad",   icon: "♠", name: { zh: "刺棒", en: "The Goad" },
+    desc: { zh: "所有黑桃牌被禁用（不计分）", en: "All Spade cards are debuffed (no score)" } },
+  { id: "window", icon: "♦", name: { zh: "窗户", en: "The Window" },
+    desc: { zh: "所有方片牌被禁用（不计分）", en: "All Diamond cards are debuffed (no score)" } },
+  { id: "head",   icon: "♥", name: { zh: "头颅", en: "The Head" },
+    desc: { zh: "所有红桃牌被禁用（不计分）", en: "All Heart cards are debuffed (no score)" } },
+  { id: "psychic",icon: "🔮", name: { zh: "通灵者", en: "The Psychic" },
+    desc: { zh: "每次必须打出 5 张牌", en: "Must play 5 cards every hand" } },
+  { id: "manacle",icon: "⛓", name: { zh: "镣铐", en: "The Manacle" },
+    desc: { zh: "手牌上限 -1", en: "-1 hand size" } },
+  { id: "water",  icon: "💧", name: { zh: "流水", en: "The Water" },
+    desc: { zh: "本回合弃牌次数为 0", en: "Start with 0 discards" } },
+  { id: "needle", icon: "💉", name: { zh: "针头", en: "The Needle" },
+    desc: { zh: "本回合只能出 1 次牌", en: "Play only 1 hand" } },
+  { id: "wall",   icon: "🧱", name: { zh: "高墙", en: "The Wall" },
+    desc: { zh: "目标分数特别高", en: "Extra large target score" } },
 ];
 
 /* ---------- 盲注元数据 ---------- */
 const BLIND_META = [
-  { name: "小盲注", cls: "", chip: "", reward: 3 },
-  { name: "大盲注", cls: "big-blind", chip: "big", reward: 4 },
-  { name: "Boss盲注", cls: "boss-blind", chip: "boss", reward: 5 },
+  { name: { zh: "小盲注", en: "Small Blind" }, cls: "", chip: "", reward: 3 },
+  { name: { zh: "大盲注", en: "Big Blind" }, cls: "big-blind", chip: "big", reward: 4 },
+  { name: { zh: "Boss盲注", en: "Boss Blind" }, cls: "boss-blind", chip: "boss", reward: 5 },
 ];
 
 /* ---------- 小丑牌定义 ---------- */
 /* trigger: perCard(逐卡计分时) / after(牌型算完后) / money(结算时) */
 const JOKER_DEFS = [
-  { id: "joker", name: "小丑", icon: "🃏", rarity: "common", cost: 3,
-    desc: "+4 倍率",
+  { id: "joker", icon: "🃏", rarity: "common", cost: 3,
+    name: { zh: "小丑", en: "Joker" },
+    desc: { zh: "+4 倍率", en: "+4 Mult" },
     after: s => ({ mult: 4 }) },
-  { id: "greedy", name: "贪婪小丑", icon: "🤑", rarity: "common", cost: 5,
-    desc: "打出的每张方片牌 +3 倍率",
+  { id: "greedy", icon: "🤑", rarity: "common", cost: 5,
+    name: { zh: "贪婪小丑", en: "Greedy Joker" },
+    desc: { zh: "打出的每张方片牌 +3 倍率", en: "Played Diamond cards give +3 Mult" },
     perCard: (c) => c.suit === "♦" ? { mult: 3 } : null },
-  { id: "lusty", name: "色欲小丑", icon: "😈", rarity: "common", cost: 5,
-    desc: "打出的每张红桃牌 +3 倍率",
+  { id: "lusty", icon: "😈", rarity: "common", cost: 5,
+    name: { zh: "色欲小丑", en: "Lusty Joker" },
+    desc: { zh: "打出的每张红桃牌 +3 倍率", en: "Played Heart cards give +3 Mult" },
     perCard: (c) => c.suit === "♥" ? { mult: 3 } : null },
-  { id: "wrathful", name: "暴怒小丑", icon: "😡", rarity: "common", cost: 5,
-    desc: "打出的每张黑桃牌 +3 倍率",
+  { id: "wrathful", icon: "😡", rarity: "common", cost: 5,
+    name: { zh: "暴怒小丑", en: "Wrathful Joker" },
+    desc: { zh: "打出的每张黑桃牌 +3 倍率", en: "Played Spade cards give +3 Mult" },
     perCard: (c) => c.suit === "♠" ? { mult: 3 } : null },
-  { id: "gluttonous", name: "暴食小丑", icon: "😋", rarity: "common", cost: 5,
-    desc: "打出的每张梅花牌 +3 倍率",
+  { id: "gluttonous", icon: "😋", rarity: "common", cost: 5,
+    name: { zh: "暴食小丑", en: "Gluttonous Joker" },
+    desc: { zh: "打出的每张梅花牌 +3 倍率", en: "Played Club cards give +3 Mult" },
     perCard: (c) => c.suit === "♣" ? { mult: 3 } : null },
-  { id: "wily", name: "机智小丑", icon: "🧠", rarity: "common", cost: 4,
-    desc: "打出的牌含三条时 +100 筹码",
+  { id: "wily", icon: "🧠", rarity: "common", cost: 4,
+    name: { zh: "机智小丑", en: "Wily Joker" },
+    desc: { zh: "打出的牌含三条时 +100 筹码", en: "+100 Chips if hand contains Three of a Kind" },
     after: (s) => s.hasThree ? { chips: 100 } : null },
-  { id: "sly", name: "狡猾小丑", icon: "🦊", rarity: "common", cost: 4,
-    desc: "打出的牌含对子时 +50 筹码",
+  { id: "sly", icon: "🦊", rarity: "common", cost: 4,
+    name: { zh: "狡猾小丑", en: "Sly Joker" },
+    desc: { zh: "打出的牌含对子时 +50 筹码", en: "+50 Chips if hand contains a Pair" },
     after: (s) => s.hasPair ? { chips: 50 } : null },
-  { id: "crafty", name: "灵巧小丑", icon: "🛠", rarity: "common", cost: 4,
-    desc: "打出同花时 +80 筹码",
+  { id: "crafty", icon: "🛠", rarity: "common", cost: 4,
+    name: { zh: "灵巧小丑", en: "Crafty Joker" },
+    desc: { zh: "打出同花时 +80 筹码", en: "+80 Chips if hand contains a Flush" },
     after: (s) => s.type === "flush" || s.type === "straight_flush" || s.type === "flush_five" ? { chips: 80 } : null },
-  { id: "jolly", name: "快乐小丑", icon: "😆", rarity: "common", cost: 4,
-    desc: "打出的牌含对子时 +8 倍率",
+  { id: "jolly", icon: "😆", rarity: "common", cost: 4,
+    name: { zh: "快乐小丑", en: "Jolly Joker" },
+    desc: { zh: "打出的牌含对子时 +8 倍率", en: "+8 Mult if hand contains a Pair" },
     after: (s) => s.hasPair ? { mult: 8 } : null },
-  { id: "zany", name: "滑稽小丑", icon: "🤪", rarity: "common", cost: 5,
-    desc: "打出的牌含三条时 +12 倍率",
+  { id: "zany", icon: "🤪", rarity: "common", cost: 5,
+    name: { zh: "滑稽小丑", en: "Zany Joker" },
+    desc: { zh: "打出的牌含三条时 +12 倍率", en: "+12 Mult if hand contains Three of a Kind" },
     after: (s) => s.hasThree ? { mult: 12 } : null },
-  { id: "droll", name: "古怪小丑", icon: "🎭", rarity: "common", cost: 5,
-    desc: "打出同花时 +10 倍率",
+  { id: "droll", icon: "🎭", rarity: "common", cost: 5,
+    name: { zh: "古怪小丑", en: "Droll Joker" },
+    desc: { zh: "打出同花时 +10 倍率", en: "+10 Mult if hand contains a Flush" },
     after: (s) => s.type === "flush" || s.type === "straight_flush" || s.type === "flush_five" ? { mult: 10 } : null },
-  { id: "crazy", name: "疯狂小丑", icon: "🌀", rarity: "common", cost: 5,
-    desc: "打出顺子时 +12 倍率",
+  { id: "crazy", icon: "🌀", rarity: "common", cost: 5,
+    name: { zh: "疯狂小丑", en: "Crazy Joker" },
+    desc: { zh: "打出顺子时 +12 倍率", en: "+12 Mult if hand contains a Straight" },
     after: (s) => s.type === "straight" || s.type === "straight_flush" ? { mult: 12 } : null },
-  { id: "half", name: "半张小丑", icon: "🌓", rarity: "common", cost: 5,
-    desc: "打出 ≤3 张牌时 +20 倍率",
+  { id: "half", icon: "🌓", rarity: "common", cost: 5,
+    name: { zh: "半张小丑", en: "Half Joker" },
+    desc: { zh: "打出 ≤3 张牌时 +20 倍率", en: "+20 Mult if played hand has ≤3 cards" },
     after: (s) => s.playedCount <= 3 ? { mult: 20 } : null },
-  { id: "banner", name: "旗帜", icon: "🚩", rarity: "common", cost: 5,
-    desc: "每剩余 1 次弃牌 +30 筹码",
+  { id: "banner", icon: "🚩", rarity: "common", cost: 5,
+    name: { zh: "旗帜", en: "Banner" },
+    desc: { zh: "每剩余 1 次弃牌 +30 筹码", en: "+30 Chips per remaining discard" },
     after: (s, g) => g.discardsLeft > 0 ? { chips: 30 * g.discardsLeft } : null },
-  { id: "mystic", name: "神秘峰会", icon: "🏔", rarity: "common", cost: 5,
-    desc: "弃牌次数为 0 时 +15 倍率",
+  { id: "mystic", icon: "🏔", rarity: "common", cost: 5,
+    name: { zh: "神秘峰会", en: "Mystic Summit" },
+    desc: { zh: "弃牌次数为 0 时 +15 倍率", en: "+15 Mult when 0 discards remain" },
     after: (s, g) => g.discardsLeft === 0 ? { mult: 15 } : null },
-  { id: "fibonacci", name: "斐波那契", icon: "🐚", rarity: "uncommon", cost: 8,
-    desc: "打出的每张 A/2/3/5/8 +8 倍率",
+  { id: "fibonacci", icon: "🐚", rarity: "uncommon", cost: 8,
+    name: { zh: "斐波那契", en: "Fibonacci" },
+    desc: { zh: "打出的每张 A/2/3/5/8 +8 倍率", en: "Each played A/2/3/5/8 gives +8 Mult" },
     perCard: (c) => ["A", "2", "3", "5", "8"].includes(c.rank) ? { mult: 8 } : null },
-  { id: "scary_face", name: "鬼脸", icon: "👻", rarity: "common", cost: 4,
-    desc: "打出的每张人头牌 +30 筹码",
+  { id: "scary_face", icon: "👻", rarity: "common", cost: 4,
+    name: { zh: "鬼脸", en: "Scary Face" },
+    desc: { zh: "打出的每张人头牌 +30 筹码", en: "Played face cards give +30 Chips" },
     perCard: (c) => ["J", "Q", "K"].includes(c.rank) ? { chips: 30 } : null },
-  { id: "even_steven", name: "偶数史蒂文", icon: "2️⃣", rarity: "common", cost: 4,
-    desc: "打出的每张偶数牌 (2,4,6,8,10) +4 倍率",
+  { id: "even_steven", icon: "2️⃣", rarity: "common", cost: 4,
+    name: { zh: "偶数史蒂文", en: "Even Steven" },
+    desc: { zh: "打出的每张偶数牌 (2,4,6,8,10) +4 倍率", en: "Played even cards (2,4,6,8,10) give +4 Mult" },
     perCard: (c) => ["2", "4", "6", "8", "10"].includes(c.rank) ? { mult: 4 } : null },
-  { id: "odd_todd", name: "奇数托德", icon: "3️⃣", rarity: "common", cost: 4,
-    desc: "打出的每张奇数牌 (A,3,5,7,9) +31 筹码",
+  { id: "odd_todd", icon: "3️⃣", rarity: "common", cost: 4,
+    name: { zh: "奇数托德", en: "Odd Todd" },
+    desc: { zh: "打出的每张奇数牌 (A,3,5,7,9) +31 筹码", en: "Played odd cards (A,3,5,7,9) give +31 Chips" },
     perCard: (c) => ["A", "3", "5", "7", "9"].includes(c.rank) ? { chips: 31 } : null },
-  { id: "blackboard", name: "黑板", icon: "🖤", rarity: "uncommon", cost: 8,
-    desc: "打出的牌全为黑色花色时 ×3 倍率",
+  { id: "blackboard", icon: "🖤", rarity: "uncommon", cost: 8,
+    name: { zh: "黑板", en: "Blackboard" },
+    desc: { zh: "打出的牌全为黑色花色时 ×3 倍率", en: "×3 Mult if all played cards are black suits" },
     after: (s) => s.cards.every(c => c.suit === "♠" || c.suit === "♣") ? { xmult: 3 } : null },
-  { id: "baron_red", name: "红心女王", icon: "👸", rarity: "uncommon", cost: 8,
-    desc: "打出的牌全为红色花色时 ×3 倍率",
+  { id: "baron_red", icon: "👸", rarity: "uncommon", cost: 8,
+    name: { zh: "红心女王", en: "Red Queen" },
+    desc: { zh: "打出的牌全为红色花色时 ×3 倍率", en: "×3 Mult if all played cards are red suits" },
     after: (s) => s.cards.every(c => c.suit === "♥" || c.suit === "♦") ? { xmult: 3 } : null },
-  { id: "cavendish", name: "卡文迪什", icon: "🍌", rarity: "uncommon", cost: 7,
-    desc: "×3 倍率，回合结束有 1/6 概率被吃掉",
+  { id: "cavendish", icon: "🍌", rarity: "uncommon", cost: 7,
+    name: { zh: "卡文迪什", en: "Cavendish" },
+    desc: { zh: "×3 倍率，回合结束有 1/6 概率被吃掉", en: "×3 Mult, 1 in 6 chance to be eaten at end of round" },
     after: () => ({ xmult: 3 }),
     roundEnd: (g, j) => { if (rng() < 1 / 6) return "destroy"; } },
-  { id: "photograph", name: "照片", icon: "📷", rarity: "common", cost: 5,
-    desc: "打出的第一张人头牌 ×2 倍率",
+  { id: "photograph", icon: "📷", rarity: "common", cost: 5,
+    name: { zh: "照片", en: "Photograph" },
+    desc: { zh: "打出的第一张人头牌 ×2 倍率", en: "First played face card gives ×2 Mult" },
     perCard: (c, s) => (["J", "Q", "K"].includes(c.rank) && s.firstFace === c) ? { xmult: 2 } : null },
-  { id: "abstract", name: "抽象小丑", icon: "🎨", rarity: "common", cost: 4,
-    desc: "每持有 1 张小丑牌 +3 倍率",
+  { id: "abstract", icon: "🎨", rarity: "common", cost: 4,
+    name: { zh: "抽象小丑", en: "Abstract Joker" },
+    desc: { zh: "每持有 1 张小丑牌 +3 倍率", en: "+3 Mult per Joker owned" },
     after: (s, g) => ({ mult: 3 * g.jokers.length }) },
-  { id: "bull", name: "公牛", icon: "🐂", rarity: "uncommon", cost: 6,
-    desc: "每持有 $1 +2 筹码",
+  { id: "bull", icon: "🐂", rarity: "uncommon", cost: 6,
+    name: { zh: "公牛", en: "Bull" },
+    desc: { zh: "每持有 $1 +2 筹码", en: "+2 Chips per $1 owned" },
     after: (s, g) => g.money > 0 ? { chips: 2 * g.money } : null },
-  { id: "bootstraps", name: "自力更生", icon: "👢", rarity: "uncommon", cost: 7,
-    desc: "每持有 $5 +2 倍率",
+  { id: "bootstraps", icon: "👢", rarity: "uncommon", cost: 7,
+    name: { zh: "自力更生", en: "Bootstraps" },
+    desc: { zh: "每持有 $5 +2 倍率", en: "+2 Mult per $5 owned" },
     after: (s, g) => Math.floor(g.money / 5) > 0 ? { mult: 2 * Math.floor(g.money / 5) } : null },
-  { id: "golden", name: "黄金小丑", icon: "🪙", rarity: "common", cost: 6,
-    desc: "回合结束时获得 $4",
+  { id: "golden", icon: "🪙", rarity: "common", cost: 6,
+    name: { zh: "黄金小丑", en: "Golden Joker" },
+    desc: { zh: "回合结束时获得 $4", en: "Earn $4 at end of round" },
     money: () => 4 },
-  { id: "supernova", name: "超新星", icon: "💥", rarity: "uncommon", cost: 6,
-    desc: "本局该牌型之前每打出过 1 次 +1 倍率",
+  { id: "supernova", icon: "💥", rarity: "uncommon", cost: 6,
+    name: { zh: "超新星", en: "Supernova" },
+    desc: { zh: "本局该牌型之前每打出过 1 次 +1 倍率", en: "+1 Mult per time this hand type was previously played" },
     after: (s, g) => {
       const n = (g.handPlayCounts[s.type] || 1) - 1;  // 不含本次
       return n > 0 ? { mult: n } : null;
     } },
-  { id: "acrobat", name: "杂技演员", icon: "🤸", rarity: "uncommon", cost: 8,
-    desc: "最后一次出牌时 ×3 倍率",
+  { id: "acrobat", icon: "🤸", rarity: "uncommon", cost: 8,
+    name: { zh: "杂技演员", en: "Acrobat" },
+    desc: { zh: "最后一次出牌时 ×3 倍率", en: "×3 Mult on the final hand of the round" },
     after: (s, g) => g.handsLeft === 0 ? { xmult: 3 } : null },
-  { id: "duo", name: "二重奏", icon: "👯", rarity: "rare", cost: 10,
-    desc: "打出的牌含对子时 ×2 倍率",
+  { id: "duo", icon: "👯", rarity: "rare", cost: 10,
+    name: { zh: "二重奏", en: "The Duo" },
+    desc: { zh: "打出的牌含对子时 ×2 倍率", en: "×2 Mult if hand contains a Pair" },
     after: (s) => s.hasPair ? { xmult: 2 } : null },
-  { id: "trio", name: "三重奏", icon: "🎻", rarity: "rare", cost: 10,
-    desc: "打出的牌含三条时 ×3 倍率",
+  { id: "trio", icon: "🎻", rarity: "rare", cost: 10,
+    name: { zh: "三重奏", en: "The Trio" },
+    desc: { zh: "打出的牌含三条时 ×3 倍率", en: "×3 Mult if hand contains Three of a Kind" },
     after: (s) => s.hasThree ? { xmult: 3 } : null },
-  { id: "canio", name: "卡尼奥", icon: "🎪", rarity: "legendary", cost: 15,
-    desc: "×1 倍率，每弃掉一张人头牌永久 +0.5",
+  { id: "canio", icon: "🎪", rarity: "legendary", cost: 15,
+    name: { zh: "卡尼奥", en: "Canio" },
+    desc: { zh: "×1 倍率，每弃掉一张人头牌永久 +0.5", en: "×1 Mult, gains +0.5 permanently per discarded face card" },
     after: (s, g, j) => ({ xmult: 1 + (j.state || 0) }),
     onDiscard: (cards, g, j) => { j.state = (j.state || 0) + cards.filter(c => ["J", "Q", "K"].includes(c.rank)).length * 0.5; } },
 ];
@@ -168,101 +231,157 @@ const sellValue = def => Math.max(1, Math.floor(def.cost / 2));
 
 /* ---------- 星球牌 ---------- */
 const PLANETS = [
-  { id: "pluto",   name: "冥王星", icon: "🪐", hand: "high_card" },
-  { id: "mercury", name: "水星",   icon: "☿", hand: "pair" },
-  { id: "uranus",  name: "天王星", icon: "🌀", hand: "two_pair" },
-  { id: "venus",   name: "金星",   icon: "♀", hand: "three_kind" },
-  { id: "saturn",  name: "土星",   icon: "🪐", hand: "straight" },
-  { id: "jupiter", name: "木星",   icon: "🟠", hand: "flush" },
-  { id: "earth",   name: "地球",   icon: "🌍", hand: "full_house" },
-  { id: "mars",    name: "火星",   icon: "🔴", hand: "four_kind" },
-  { id: "neptune", name: "海王星", icon: "🔵", hand: "straight_flush" },
+  { id: "pluto",   icon: "🪐", name: { zh: "冥王星", en: "Pluto" },   hand: "high_card" },
+  { id: "mercury", icon: "☿",  name: { zh: "水星",   en: "Mercury" }, hand: "pair" },
+  { id: "uranus",  icon: "🌀", name: { zh: "天王星", en: "Uranus" },  hand: "two_pair" },
+  { id: "venus",   icon: "♀",  name: { zh: "金星",   en: "Venus" },   hand: "three_kind" },
+  { id: "saturn",  icon: "🪐", name: { zh: "土星",   en: "Saturn" },  hand: "straight" },
+  { id: "jupiter", icon: "🟠", name: { zh: "木星",   en: "Jupiter" }, hand: "flush" },
+  { id: "earth",   icon: "🌍", name: { zh: "地球",   en: "Earth" },   hand: "full_house" },
+  { id: "mars",    icon: "🔴", name: { zh: "火星",   en: "Mars" },    hand: "four_kind" },
+  { id: "neptune", icon: "🔵", name: { zh: "海王星", en: "Neptune" }, hand: "straight_flush" },
 ];
 
 /* ---------- 塔罗牌 ----------
-   购买后进入消耗品槽（上限 2），点击使用。
-   apply(g)              : 即时效果
+   购买后进入消耗品槽，点击使用。
+   apply(g)              : 即时效果，返回本地化消息
    targets:[min,max] + applyCards(cards, g) : 对选中手牌生效（回合中） */
-const suitTarot = (id, name, icon, suit) => ({
-  id, name, icon, cost: 4, targets: [1, 3],
-  desc: `选中 ≤3 张手牌变为${SUIT_NAME[suit]}`,
+const suitTarot = (id, zhName, enName, icon, suit) => ({
+  id, icon, cost: 4, targets: [1, 3],
+  name: { zh: zhName, en: enName },
+  desc: { zh: `选中 ≤3 张手牌变为${SUIT_NAME[suit].zh}`, en: `Convert up to 3 selected cards to ${SUIT_NAME[suit].en}` },
   applyCards: (cards, g) => {
     cards.forEach(c => applyCardMod(c.id, x => x.suit = suit));
-    return `${cards.length} 张牌变为 ${suit}`;
+    return S("msg_suit_change", cards.length, suit);
+  },
+});
+const enhTarot = (id, zhName, enName, icon, enh) => ({
+  id, icon, cost: 5, targets: [1, 1],
+  name: { zh: zhName, en: enName },
+  desc: { zh: `选中 1 张手牌变为${ENH[enh].name.zh}（${ENH[enh].desc.zh}）`,
+          en: `Convert 1 selected card to a ${ENH[enh].name.en} (${ENH[enh].desc.en})` },
+  applyCards: (cards, g) => {
+    applyCardMod(cards[0].id, x => x.enh = enh);
+    return S("msg_enhanced", cards[0].rank + cards[0].suit, L(ENH[enh].name));
   },
 });
 const TAROTS = [
-  { id: "hermit", name: "隐者", icon: "🕯", cost: 4,
-    desc: "金钱翻倍 (最多 +$20)",
+  { id: "hermit", icon: "🕯", cost: 4,
+    name: { zh: "隐者", en: "The Hermit" },
+    desc: { zh: "金钱翻倍 (最多 +$20)", en: "Double your money (max +$20)" },
     apply: g => { const v = Math.min(20, Math.max(0, g.money)); g.money += v; return `+$${v}`; } },
-  { id: "temperance", name: "节制", icon: "⚖️", cost: 4,
-    desc: "获得持有小丑牌总售价 (最多 $30)",
+  { id: "temperance", icon: "⚖️", cost: 4,
+    name: { zh: "节制", en: "Temperance" },
+    desc: { zh: "获得持有小丑牌总售价 (最多 $30)", en: "Gain total sell value of your Jokers (max $30)" },
     apply: g => {
       const v = Math.min(30, g.jokers.reduce((s, j) => s + sellValue(JOKER_BY_ID.get(j.id)), 0));
       g.money += v; return `+$${v}`;
     } },
-  { id: "empress", name: "女皇", icon: "👑", cost: 4,
-    desc: "随机牌型 +1 级",
+  { id: "empress", icon: "👑", cost: 4,
+    name: { zh: "女皇", en: "The Empress" },
+    desc: { zh: "随机牌型 +1 级", en: "Upgrade a random hand type by 1 level" },
     apply: g => {
       const k = rnd(Object.keys(HAND_TYPES));
       g.handLevels[k]++;
-      return `${HAND_TYPES[k].name} → Lv.${g.handLevels[k]}`;
+      return `${L(HAND_TYPES[k].name)} → Lv.${g.handLevels[k]}`;
     } },
-  { id: "strength", name: "力量", icon: "💪", cost: 5,
-    desc: "每回合弃牌次数 +1 (本局)",
-    apply: g => { g.bonusDiscards++; return `弃牌上限 ${3 + g.bonusDiscards}`; } },
-  { id: "judgement", name: "审判", icon: "📯", cost: 8,
-    desc: "每回合出牌次数 +1 (本局)",
-    apply: g => { g.bonusHands++; return `出牌上限 ${4 + g.bonusHands}`; } },
-  { id: "tower", name: "高塔", icon: "🗼", cost: 8,
-    desc: "手牌上限 +1 (本局)",
-    apply: g => { g.handSize++; return `手牌上限 ${g.handSize}`; } },
-  suitTarot("sun",   "太阳", "☀️", "♥"),
-  suitTarot("star",  "星星", "⭐", "♦"),
-  suitTarot("moon",  "月亮", "🌙", "♣"),
-  suitTarot("world", "世界", "🌏", "♠"),
-  { id: "emperor", name: "皇帝", icon: "🤴", cost: 5, targets: [1, 2],
-    desc: "选中 ≤2 张手牌点数 +1 (A→2)",
+  { id: "strength", icon: "💪", cost: 5,
+    name: { zh: "力量", en: "Strength" },
+    desc: { zh: "每回合弃牌次数 +1 (本局)", en: "+1 discard per round (this run)" },
+    apply: g => { g.bonusDiscards++; return S("msg_discard_up", 3 + g.bonusDiscards); } },
+  { id: "judgement", icon: "📯", cost: 8,
+    name: { zh: "审判", en: "Judgement" },
+    desc: { zh: "每回合出牌次数 +1 (本局)", en: "+1 hand per round (this run)" },
+    apply: g => { g.bonusHands++; return S("msg_hands_up", 4 + g.bonusHands); } },
+  { id: "tower", icon: "🗼", cost: 8,
+    name: { zh: "高塔", en: "The Tower" },
+    desc: { zh: "手牌上限 +1 (本局)", en: "+1 hand size (this run)" },
+    apply: g => { g.handSize++; return S("msg_handsize_up", g.handSize); } },
+  suitTarot("sun",   "太阳", "The Sun",   "☀️", "♥"),
+  suitTarot("star",  "星星", "The Star",  "⭐", "♦"),
+  suitTarot("moon",  "月亮", "The Moon",  "🌙", "♣"),
+  suitTarot("world", "世界", "The World", "🌏", "♠"),
+  { id: "emperor", icon: "🤴", cost: 5, targets: [1, 2],
+    name: { zh: "皇帝", en: "The Emperor" },
+    desc: { zh: "选中 ≤2 张手牌点数 +1 (A→2)", en: "Raise rank of up to 2 selected cards by 1 (A→2)" },
     applyCards: (cards, g) => {
       cards.forEach(c => applyCardMod(c.id, x => {
         x.rank = RANKS[(RANKS.indexOf(x.rank) + 1) % RANKS.length];
       }));
-      return `${cards.length} 张牌点数 +1`;
+      return S("msg_rank_up", cards.length);
     } },
-  { id: "lovers", name: "恋人", icon: "💞", cost: 5, targets: [1, 1],
-    desc: `选中 1 张手牌变为${ENH.bonus.name}（${ENH.bonus.desc}）`,
-    applyCards: (cards, g) => {
-      applyCardMod(cards[0].id, x => x.enh = "bonus");
-      return `${cards[0].rank}${cards[0].suit} 变为${ENH.bonus.name}`;
-    } },
-  { id: "chariot", name: "战车", icon: "🛞", cost: 5, targets: [1, 1],
-    desc: `选中 1 张手牌变为${ENH.mult.name}（${ENH.mult.desc}）`,
-    applyCards: (cards, g) => {
-      applyCardMod(cards[0].id, x => x.enh = "mult");
-      return `${cards[0].rank}${cards[0].suit} 变为${ENH.mult.name}`;
-    } },
-  { id: "hanged", name: "吊人", icon: "🪢", cost: 5, targets: [1, 2],
-    desc: "销毁选中的 ≤2 张牌（永久移出牌库）",
+  enhTarot("lovers",  "恋人", "The Lovers",  "💞", "bonus"),
+  enhTarot("chariot", "战车", "The Chariot", "🛞", "mult"),
+  enhTarot("justice", "正义", "Justice",     "🛡", "steel"),
+  enhTarot("devil",   "恶魔", "The Devil",   "😈", "gold"),
+  { id: "hanged", icon: "🪢", cost: 5, targets: [1, 2],
+    name: { zh: "吊人", en: "The Hanged Man" },
+    desc: { zh: "销毁选中的 ≤2 张牌（永久移出牌库）", en: "Destroy up to 2 selected cards (removed from deck permanently)" },
     applyCards: (cards, g) => {
       const ids = new Set(cards.map(c => c.id));
       g.masterDeck = g.masterDeck.filter(c => !ids.has(c.id));
       g.deck = g.deck.filter(c => !ids.has(c.id));
       g.hand = g.hand.filter(c => !ids.has(c.id));
-      return `销毁 ${cards.length} 张牌`;
+      return S("msg_destroyed", cards.length);
     } },
 ];
 const TAROT_BY_ID = new Map(TAROTS.map(t => [t.id, t]));
 
+/* ---------- 卡包（购买后 3 选 1） ---------- */
+const PACKS = [
+  { kind: "arcana", icon: "🔮", cost: 4,
+    name: { zh: "塔罗包", en: "Arcana Pack" },
+    desc: { zh: "3 张塔罗牌选 1", en: "Pick 1 of 3 Tarot cards" } },
+  { kind: "celestial", icon: "🪐", cost: 4,
+    name: { zh: "星球包", en: "Celestial Pack" },
+    desc: { zh: "3 张星球牌选 1（立即生效）", en: "Pick 1 of 3 Planet cards (applied instantly)" } },
+  { kind: "buffoon", icon: "🎪", cost: 6,
+    name: { zh: "小丑包", en: "Buffoon Pack" },
+    desc: { zh: "3 张小丑牌选 1", en: "Pick 1 of 3 Jokers" } },
+];
+
+/* ---------- 优惠券（每局每种限购一次的永久升级） ---------- */
+const VOUCHERS = [
+  { id: "overstock", icon: "📦", cost: 10,
+    name: { zh: "超额库存", en: "Overstock" },
+    desc: { zh: "商店每次多 1 张小丑牌", en: "Shop offers +1 Joker" },
+    apply: g => {} },
+  { id: "clearance", icon: "🏷", cost: 8,
+    name: { zh: "清仓甩卖", en: "Clearance Sale" },
+    desc: { zh: "商店刷新费从 $3 起", en: "Shop rerolls start at $3" },
+    apply: g => {} },
+  { id: "crate", icon: "🧰", cost: 8,
+    name: { zh: "手提箱", en: "Crate" },
+    desc: { zh: "消耗品槽 +1", en: "+1 consumable slot" },
+    apply: g => { g.maxConsumables++; } },
+  { id: "retainer", icon: "💼", cost: 10,
+    name: { zh: "伙伴合约", en: "Retainer" },
+    desc: { zh: "小丑牌槽 +1", en: "+1 Joker slot" },
+    apply: g => { g.maxJokers++; } },
+  { id: "compound", icon: "🏦", cost: 10,
+    name: { zh: "复利", en: "Compound Interest" },
+    desc: { zh: "利息上限 $5 → $10", en: "Interest cap raised from $5 to $10" },
+    apply: g => { g.interestCap = 10; } },
+  { id: "grabber", icon: "🫳", cost: 10,
+    name: { zh: "抓手", en: "Grabber" },
+    desc: { zh: "每回合出牌次数 +1", en: "+1 hand per round" },
+    apply: g => { g.bonusHands++; } },
+];
+const VOUCHER_BY_ID = new Map(VOUCHERS.map(v => [v.id, v]));
+
 /* ---------- 跳过盲注的标签奖励 ---------- */
 const SKIP_TAGS = [
-  { id: "cash", name: "金钱标签", icon: "💰",
+  { id: "cash", icon: "💰",
+    name: { zh: "金钱标签", en: "Cash Tag" },
     apply: g => { g.money += 3; return "+$3"; } },
-  { id: "coupon", name: "优惠券标签", icon: "🎟",
-    apply: g => { g.freeReroll++; return "下次商店可免费刷新 1 次"; } },
-  { id: "orbit", name: "星球标签", icon: "🪐",
+  { id: "coupon", icon: "🎟",
+    name: { zh: "优惠券标签", en: "Coupon Tag" },
+    apply: g => { g.freeReroll++; return S("msg_free_reroll"); } },
+  { id: "orbit", icon: "🪐",
+    name: { zh: "星球标签", en: "Orbit Tag" },
     apply: g => {
       const k = rnd(Object.keys(HAND_TYPES));
       g.handLevels[k]++;
-      return `${HAND_TYPES[k].name} 升到 Lv.${g.handLevels[k]}`;
+      return `${L(HAND_TYPES[k].name)} → Lv.${g.handLevels[k]}`;
     } },
 ];

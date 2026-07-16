@@ -1,10 +1,10 @@
 /* 小丑牌 · JOKER — Service Worker
    网络优先、缓存兜底：在线时始终拿最新版本，离线时用缓存照常游玩。 */
-const CACHE = "joker-v1";
+const CACHE = "joker-v2";
 const ASSETS = [
   "./", "./index.html", "./style.css",
-  "./defs.js", "./engine.js", "./ui.js",
-  "./manifest.json", "./icon.svg",
+  "./i18n.js", "./defs.js", "./engine.js", "./ui.js",
+  "./manifest.json", "./icon.svg", "./apple-touch-icon.png",
 ];
 
 self.addEventListener("install", e => {
