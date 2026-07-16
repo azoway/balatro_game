@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>小丑牌 · JOKER</title>
+<meta name="theme-color" content="#0a1a16">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -66,14 +69,22 @@
 
     <button class="small-btn" id="run-info-btn">牌型等级</button>
     <button class="small-btn" id="new-run-btn">重新开局</button>
+    <button class="small-btn" id="daily-btn">今日挑战</button>
+    <div class="hotkeys seed-line" id="seed-line" title="点击输入自定义种子">种子 -</div>
     <div class="hotkeys">快捷键: 1-9选牌 · Enter出牌 · X弃牌 · R/S排序 · M静音 · 计分中点击加速</div>
   </aside>
 
   <!-- ===== 主区域 ===== -->
   <main id="main">
     <div id="joker-row">
-      <div class="row-label">小丑牌 <span id="joker-count">0/5</span></div>
-      <div id="jokers"></div>
+      <div id="joker-sec">
+        <div class="row-label">小丑牌 <span id="joker-count">0/5</span></div>
+        <div id="jokers"></div>
+      </div>
+      <div id="consumable-sec">
+        <div class="row-label">消耗品 <span id="consumable-count">0/2</span></div>
+        <div id="consumables"></div>
+      </div>
     </div>
 
     <div id="play-area"></div>
@@ -139,12 +150,15 @@
     <div class="end-box" id="end-box">
       <div class="end-title" id="end-title">游戏结束</div>
       <div class="end-detail" id="end-detail"></div>
+      <button class="btn btn-orange big hidden" id="endless-btn">♾️ 无尽模式</button>
       <button class="btn btn-blue big" id="restart-btn">再来一局</button>
     </div>
   </div>
 
   <div id="tooltip" class="hidden"></div>
 </div>
-<script src="game.js"></script>
+<script src="defs.js"></script>
+<script src="engine.js"></script>
+<script src="ui.js"></script>
 </body>
 </html>

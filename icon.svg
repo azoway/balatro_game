@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="24" fill="#0f2b24"/>
+  <g transform="rotate(6 64 64)">
+    <rect x="34" y="18" width="60" height="92" rx="8" fill="#f4efe1" stroke="#1a3a32" stroke-width="3"/>
+    <text x="64" y="82" font-size="46" text-anchor="middle">🃏</text>
+  </g>
+</svg>

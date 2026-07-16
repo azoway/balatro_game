@@ -1,5 +1,5 @@
 /* =========================================================
-   小丑牌 · JOKER — Balatro 风格网页卡牌游戏
+   小丑牌 · JOKER — UI（渲染 / 动画 / 音效 / 流程 / 事件绑定）
    ========================================================= */
 "use strict";
 
@@ -15,24 +15,11 @@ const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia
 const NO_HOVER = typeof window !== "undefined" && window.matchMedia
   ? window.matchMedia("(hover: none)").matches : false;
 
-/* ---------- 可播种随机数 (mulberry32) ----------
-   所有影响玩法的随机（洗牌 / Boss / 商店 / 小丑效果）走 rng()，
-   纯视觉随机（彩带、倾斜）仍用 Math.random，不污染随机流。 */
-let _rngState = 1;
-function seedRNG(seed) { _rngState = (seed >>> 0) || 1; }
-function rng() {
-  _rngState = (_rngState + 0x6D2B79F5) >>> 0;
-  let t = _rngState;
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-}
-const rnd = arr => arr[Math.floor(rng() * arr.length)];
-
 /* ---------- 音效 (WebAudio) ---------- */
 const AudioFX = (() => {
   let ctx = null;
   let muted = false;
+  try { muted = localStorage.getItem("joker_muted") === "1"; } catch (e) { /* 忽略 */ }
   const ac = () => {
     ctx ||= new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state === "suspended") ctx.resume();   // 浏览器自动播放策略
@@ -50,12 +37,14 @@ const AudioFX = (() => {
     } catch (e) { /* 忽略 */ }
   }
   return {
-    toggleMute: () => (muted = !muted),
-    isMuted: () => muted,
+    toggleMute: () => {
+      muted = !muted;
+      try { localStorage.setItem("joker_muted", muted ? "1" : "0"); } catch (e) { /* 忽略 */ }
+      return muted;
+    },
     select: () => tone(520, .08, "triangle", .12),
     deselect: () => tone(380, .08, "triangle", .1),
     chip: i => tone(600 + i * 90, .1, "square", .07),
-    mult: i => tone(300 + i * 60, .12, "sawtooth", .06),
     joker: () => { tone(700, .1, "triangle", .12); tone(1050, .12, "triangle", .1, .06); },
     play: () => tone(440, .12, "triangle", .14),
     discard: () => tone(240, .12, "sawtooth", .08),
@@ -67,340 +56,7 @@ const AudioFX = (() => {
   };
 })();
 
-/* ---------- 常量 ---------- */
-const SUITS = ["♠", "♥", "♣", "♦"];
-const SUIT_NAME = { "♠": "黑桃", "♥": "红桃", "♣": "梅花", "♦": "方片" };
-const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
-const RANK_VAL = Object.fromEntries(RANKS.map((r, i) => [r, i + 2]));
-const CHIP_VAL = r => r === "A" ? 11 : (RANK_VAL[r] >= 11 ? 10 : RANK_VAL[r]);
-
-const HAND_TYPES = {
-  flush_five:     { name: "同花五条", chips: 160, mult: 16, up: [50, 3] },
-  straight_flush: { name: "同花顺",   chips: 100, mult: 8,  up: [40, 4] },
-  four_kind:      { name: "四条",     chips: 60,  mult: 7,  up: [30, 3] },
-  full_house:     { name: "葫芦",     chips: 40,  mult: 4,  up: [25, 2] },
-  flush:          { name: "同花",     chips: 35,  mult: 4,  up: [15, 2] },
-  straight:       { name: "顺子",     chips: 30,  mult: 4,  up: [30, 3] },
-  three_kind:     { name: "三条",     chips: 30,  mult: 3,  up: [20, 2] },
-  two_pair:       { name: "两对",     chips: 20,  mult: 2,  up: [20, 1] },
-  pair:           { name: "对子",     chips: 10,  mult: 2,  up: [15, 1] },
-  high_card:      { name: "高牌",     chips: 5,   mult: 1,  up: [10, 1] },
-};
-
-const ANTE_BASE = [100, 300, 800, 2000, 5000, 11000, 20000, 35000, 50000];
-const MAX_ANTE = 8;
-
-/* ---------- Boss 盲注 ---------- */
-const BOSSES = [
-  { id: "hook",   name: "钩子",   desc: "每次出牌后随机弃掉 2 张手牌", icon: "🪝" },
-  { id: "club",   name: "梅花",   desc: "所有梅花牌被禁用（不计分）", icon: "♣" },
-  { id: "goad",   name: "刺棒",   desc: "所有黑桃牌被禁用（不计分）", icon: "♠" },
-  { id: "window", name: "窗户",   desc: "所有方片牌被禁用（不计分）", icon: "♦" },
-  { id: "head",   name: "头颅",   desc: "所有红桃牌被禁用（不计分）", icon: "♥" },
-  { id: "psychic",name: "通灵者", desc: "每次必须打出 5 张牌", icon: "🔮" },
-  { id: "manacle",name: "镣铐",   desc: "手牌上限 -1", icon: "⛓" },
-  { id: "water",  name: "流水",   desc: "本回合弃牌次数为 0", icon: "💧" },
-  { id: "needle", name: "针头",   desc: "本回合只能出 1 次牌", icon: "💉" },
-  { id: "wall",   name: "高墙",   desc: "目标分数特别高", icon: "🧱" },
-];
-
-/* ---------- 小丑牌定义 ---------- */
-/* trigger: perCard(逐卡计分时) / after(牌型算完后) / money(结算时) */
-const JOKER_DEFS = [
-  { id: "joker", name: "小丑", icon: "🃏", rarity: "common", cost: 3,
-    desc: "+4 倍率",
-    after: s => ({ mult: 4 }) },
-  { id: "greedy", name: "贪婪小丑", icon: "🤑", rarity: "common", cost: 5,
-    desc: "打出的每张方片牌 +3 倍率",
-    perCard: (c) => c.suit === "♦" ? { mult: 3 } : null },
-  { id: "lusty", name: "色欲小丑", icon: "😈", rarity: "common", cost: 5,
-    desc: "打出的每张红桃牌 +3 倍率",
-    perCard: (c) => c.suit === "♥" ? { mult: 3 } : null },
-  { id: "wrathful", name: "暴怒小丑", icon: "😡", rarity: "common", cost: 5,
-    desc: "打出的每张黑桃牌 +3 倍率",
-    perCard: (c) => c.suit === "♠" ? { mult: 3 } : null },
-  { id: "gluttonous", name: "暴食小丑", icon: "😋", rarity: "common", cost: 5,
-    desc: "打出的每张梅花牌 +3 倍率",
-    perCard: (c) => c.suit === "♣" ? { mult: 3 } : null },
-  { id: "wily", name: "机智小丑", icon: "🧠", rarity: "common", cost: 4,
-    desc: "打出的牌含三条时 +100 筹码",
-    after: (s) => s.hasThree ? { chips: 100 } : null },
-  { id: "sly", name: "狡猾小丑", icon: "🦊", rarity: "common", cost: 4,
-    desc: "打出的牌含对子时 +50 筹码",
-    after: (s) => s.hasPair ? { chips: 50 } : null },
-  { id: "crafty", name: "灵巧小丑", icon: "🛠", rarity: "common", cost: 4,
-    desc: "打出同花时 +80 筹码",
-    after: (s) => s.type === "flush" || s.type === "straight_flush" || s.type === "flush_five" ? { chips: 80 } : null },
-  { id: "jolly", name: "快乐小丑", icon: "😆", rarity: "common", cost: 4,
-    desc: "打出的牌含对子时 +8 倍率",
-    after: (s) => s.hasPair ? { mult: 8 } : null },
-  { id: "zany", name: "滑稽小丑", icon: "🤪", rarity: "common", cost: 5,
-    desc: "打出的牌含三条时 +12 倍率",
-    after: (s) => s.hasThree ? { mult: 12 } : null },
-  { id: "droll", name: "古怪小丑", icon: "🎭", rarity: "common", cost: 5,
-    desc: "打出同花时 +10 倍率",
-    after: (s) => s.type === "flush" || s.type === "straight_flush" || s.type === "flush_five" ? { mult: 10 } : null },
-  { id: "crazy", name: "疯狂小丑", icon: "🌀", rarity: "common", cost: 5,
-    desc: "打出顺子时 +12 倍率",
-    after: (s) => s.type === "straight" || s.type === "straight_flush" ? { mult: 12 } : null },
-  { id: "half", name: "半张小丑", icon: "🌓", rarity: "common", cost: 5,
-    desc: "打出 ≤3 张牌时 +20 倍率",
-    after: (s) => s.playedCount <= 3 ? { mult: 20 } : null },
-  { id: "banner", name: "旗帜", icon: "🚩", rarity: "common", cost: 5,
-    desc: "每剩余 1 次弃牌 +30 筹码",
-    after: (s, g) => g.discardsLeft > 0 ? { chips: 30 * g.discardsLeft } : null },
-  { id: "mystic", name: "神秘峰会", icon: "🏔", rarity: "common", cost: 5,
-    desc: "弃牌次数为 0 时 +15 倍率",
-    after: (s, g) => g.discardsLeft === 0 ? { mult: 15 } : null },
-  { id: "fibonacci", name: "斐波那契", icon: "🐚", rarity: "uncommon", cost: 8,
-    desc: "打出的每张 A/2/3/5/8 +8 倍率",
-    perCard: (c) => ["A", "2", "3", "5", "8"].includes(c.rank) ? { mult: 8 } : null },
-  { id: "scary_face", name: "鬼脸", icon: "👻", rarity: "common", cost: 4,
-    desc: "打出的每张人头牌 +30 筹码",
-    perCard: (c) => ["J", "Q", "K"].includes(c.rank) ? { chips: 30 } : null },
-  { id: "even_steven", name: "偶数史蒂文", icon: "2️⃣", rarity: "common", cost: 4,
-    desc: "打出的每张偶数牌 (2,4,6,8,10) +4 倍率",
-    perCard: (c) => ["2", "4", "6", "8", "10"].includes(c.rank) ? { mult: 4 } : null },
-  { id: "odd_todd", name: "奇数托德", icon: "3️⃣", rarity: "common", cost: 4,
-    desc: "打出的每张奇数牌 (A,3,5,7,9) +31 筹码",
-    perCard: (c) => ["A", "3", "5", "7", "9"].includes(c.rank) ? { chips: 31 } : null },
-  { id: "blackboard", name: "黑板", icon: "🖤", rarity: "uncommon", cost: 8,
-    desc: "打出的牌全为黑色花色时 ×3 倍率",
-    after: (s) => s.cards.every(c => c.suit === "♠" || c.suit === "♣") ? { xmult: 3 } : null },
-  { id: "baron_red", name: "红心女王", icon: "👸", rarity: "uncommon", cost: 8,
-    desc: "打出的牌全为红色花色时 ×3 倍率",
-    after: (s) => s.cards.every(c => c.suit === "♥" || c.suit === "♦") ? { xmult: 3 } : null },
-  { id: "cavendish", name: "卡文迪什", icon: "🍌", rarity: "uncommon", cost: 7,
-    desc: "×3 倍率，回合结束有 1/6 概率被吃掉",
-    after: () => ({ xmult: 3 }),
-    roundEnd: (g, j) => { if (rng() < 1 / 6) return "destroy"; } },
-  { id: "photograph", name: "照片", icon: "📷", rarity: "common", cost: 5,
-    desc: "打出的第一张人头牌 ×2 倍率",
-    perCard: (c, s) => (["J", "Q", "K"].includes(c.rank) && s.firstFace === c) ? { xmult: 2 } : null },
-  { id: "abstract", name: "抽象小丑", icon: "🎨", rarity: "common", cost: 4,
-    desc: "每持有 1 张小丑牌 +3 倍率",
-    after: (s, g) => ({ mult: 3 * g.jokers.length }) },
-  { id: "bull", name: "公牛", icon: "🐂", rarity: "uncommon", cost: 6,
-    desc: "每持有 $1 +2 筹码",
-    after: (s, g) => g.money > 0 ? { chips: 2 * g.money } : null },
-  { id: "bootstraps", name: "自力更生", icon: "👢", rarity: "uncommon", cost: 7,
-    desc: "每持有 $5 +2 倍率",
-    after: (s, g) => Math.floor(g.money / 5) > 0 ? { mult: 2 * Math.floor(g.money / 5) } : null },
-  { id: "golden", name: "黄金小丑", icon: "🪙", rarity: "common", cost: 6,
-    desc: "回合结束时获得 $4",
-    money: () => 4 },
-  { id: "supernova", name: "超新星", icon: "💥", rarity: "uncommon", cost: 6,
-    desc: "本局该牌型之前每打出过 1 次 +1 倍率",
-    after: (s, g) => {
-      const n = (g.handPlayCounts[s.type] || 1) - 1;  // 不含本次
-      return n > 0 ? { mult: n } : null;
-    } },
-  { id: "acrobat", name: "杂技演员", icon: "🤸", rarity: "uncommon", cost: 8,
-    desc: "最后一次出牌时 ×3 倍率",
-    after: (s, g) => g.handsLeft === 0 ? { xmult: 3 } : null },
-  { id: "duo", name: "二重奏", icon: "👯", rarity: "rare", cost: 10,
-    desc: "打出的牌含对子时 ×2 倍率",
-    after: (s) => s.hasPair ? { xmult: 2 } : null },
-  { id: "trio", name: "三重奏", icon: "🎻", rarity: "rare", cost: 10,
-    desc: "打出的牌含三条时 ×3 倍率",
-    after: (s) => s.hasThree ? { xmult: 3 } : null },
-  { id: "canio", name: "卡尼奥", icon: "🎪", rarity: "legendary", cost: 15,
-    desc: "×1 倍率，每弃掉一张人头牌永久 +0.5",
-    after: (s, g, j) => ({ xmult: 1 + (j.state || 0) }),
-    onDiscard: (cards, g, j) => { j.state = (j.state || 0) + cards.filter(c => ["J", "Q", "K"].includes(c.rank)).length * 0.5; } },
-];
-const JOKER_BY_ID = new Map(JOKER_DEFS.map(d => [d.id, d]));
-const sellValue = def => Math.max(1, Math.floor(def.cost / 2));
-
-/* ---------- 星球牌 ---------- */
-const PLANETS = [
-  { id: "pluto",   name: "冥王星", icon: "🪐", hand: "high_card" },
-  { id: "mercury", name: "水星",   icon: "☿", hand: "pair" },
-  { id: "uranus",  name: "天王星", icon: "🌀", hand: "two_pair" },
-  { id: "venus",   name: "金星",   icon: "♀", hand: "three_kind" },
-  { id: "saturn",  name: "土星",   icon: "🪐", hand: "straight" },
-  { id: "jupiter", name: "木星",   icon: "🟠", hand: "flush" },
-  { id: "earth",   name: "地球",   icon: "🌍", hand: "full_house" },
-  { id: "mars",    name: "火星",   icon: "🔴", hand: "four_kind" },
-  { id: "neptune", name: "海王星", icon: "🔵", hand: "straight_flush" },
-];
-
-/* ---------- 塔罗牌（购买后立即生效的消耗品） ---------- */
-const TAROTS = [
-  { id: "hermit", name: "隐者", icon: "🕯", cost: 4,
-    desc: "金钱翻倍 (最多 +$20)",
-    apply: g => { const v = Math.min(20, Math.max(0, g.money)); g.money += v; return `+$${v}`; } },
-  { id: "temperance", name: "节制", icon: "⚖️", cost: 4,
-    desc: "获得持有小丑牌总售价 (最多 $30)",
-    apply: g => {
-      const v = Math.min(30, g.jokers.reduce((s, j) => s + sellValue(JOKER_BY_ID.get(j.id)), 0));
-      g.money += v; return `+$${v}`;
-    } },
-  { id: "empress", name: "女皇", icon: "👑", cost: 4,
-    desc: "随机牌型 +1 级",
-    apply: g => {
-      const k = rnd(Object.keys(HAND_TYPES));
-      g.handLevels[k]++;
-      return `${HAND_TYPES[k].name} → Lv.${g.handLevels[k]}`;
-    } },
-  { id: "strength", name: "力量", icon: "💪", cost: 5,
-    desc: "每回合弃牌次数 +1 (本局)",
-    apply: g => { g.bonusDiscards++; return `弃牌上限 ${3 + g.bonusDiscards}`; } },
-  { id: "judgement", name: "审判", icon: "📯", cost: 8,
-    desc: "每回合出牌次数 +1 (本局)",
-    apply: g => { g.bonusHands++; return `出牌上限 ${4 + g.bonusHands}`; } },
-  { id: "tower", name: "高塔", icon: "🗼", cost: 8,
-    desc: "手牌上限 +1 (本局)",
-    apply: g => { g.handSize++; return `手牌上限 ${g.handSize}`; } },
-];
-
-/* ---------- 跳过盲注的标签奖励 ---------- */
-const SKIP_TAGS = [
-  { id: "cash", name: "金钱标签", icon: "💰",
-    apply: g => { g.money += 3; return "+$3"; } },
-  { id: "coupon", name: "优惠券标签", icon: "🎟",
-    apply: g => { g.freeReroll++; return "下次商店可免费刷新 1 次"; } },
-  { id: "orbit", name: "星球标签", icon: "🪐",
-    apply: g => {
-      const k = rnd(Object.keys(HAND_TYPES));
-      g.handLevels[k]++;
-      return `${HAND_TYPES[k].name} 升到 Lv.${g.handLevels[k]}`;
-    } },
-];
-
-/* ---------- 游戏状态 ---------- */
-const G = {};
-
-/* ---------- 存档 ---------- */
-const SAVE_KEY = "joker_save_v1";
-
-function saveGame() {
-  if (G.state === "over") { localStorage.removeItem(SAVE_KEY); return; }
-  try {
-    const data = {
-      v: 2,
-      money: G.money, ante: G.ante, round: G.round,
-      blindIndex: G.blindIndex, bossId: G.boss?.id,
-      jokers: G.jokers.map(j => ({ id: j.id, uid: j.uid, state: j.state })),
-      handLevels: G.handLevels, handPlayCounts: G.handPlayCounts,
-      seed: G.seed, rngState: _rngState,
-      handSize: G.handSize, bonusHands: G.bonusHands,
-      bonusDiscards: G.bonusDiscards, freeReroll: G.freeReroll,
-      state: G.state === "playing" ? "playing" : "other",
-    };
-    // 回合中存档：刷新后可从当前手牌继续
-    if (G.state === "playing" && !G.scoring) {
-      data.mid = {
-        deck: G.deck, hand: G.hand,
-        handsLeft: G.handsLeft, discardsLeft: G.discardsLeft,
-        roundScore: G.roundScore, target: G.target,
-        curHandSize: G.curHandSize, maxHands: G.maxHands, maxDiscards: G.maxDiscards,
-        sortMode: G.sortMode || "rank",
-      };
-    }
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-  } catch (e) { /* 隐私模式等场景静默失败 */ }
-}
-
-function loadGame() {
-  try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return false;
-    const d = JSON.parse(raw);
-    if (typeof d.ante !== "number" || !Array.isArray(d.jokers)) return false;
-    newGameState();
-    if (typeof d.seed === "number") G.seed = d.seed;
-    seedRNG(typeof d.rngState === "number" ? d.rngState : G.seed);
-    G.money = d.money; G.ante = d.ante; G.round = d.round;
-    G.blindIndex = d.blindIndex ?? 0;
-    G.boss = BOSSES.find(b => b.id === d.bossId) || rnd(BOSSES);
-    G.jokers = d.jokers.filter(j => JOKER_BY_ID.has(j.id));
-    Object.assign(G.handLevels, d.handLevels);
-    G.handPlayCounts = d.handPlayCounts || {};
-    G.handSize = d.handSize ?? 8;
-    G.bonusHands = d.bonusHands || 0;
-    G.bonusDiscards = d.bonusDiscards || 0;
-    G.freeReroll = d.freeReroll || 0;
-    if (d.state === "playing" && d.mid && Array.isArray(d.mid.hand)) {
-      Object.assign(G, {
-        state: "playing",
-        deck: d.mid.deck || [], hand: d.mid.hand,
-        handsLeft: d.mid.handsLeft, discardsLeft: d.mid.discardsLeft,
-        roundScore: d.mid.roundScore || 0, target: d.mid.target,
-        curHandSize: d.mid.curHandSize || G.handSize,
-        maxHands: d.mid.maxHands ?? 4, maxDiscards: d.mid.maxDiscards ?? 3,
-        sortMode: d.mid.sortMode || "rank",
-      });
-      G.currentBoss = G.blindIndex === 2 ? G.boss : null;
-      $("blind-select").classList.add("hidden");
-      $("shop").classList.add("hidden");
-      render();
-      flashMessage("📂 已恢复上局进度");
-    } else {
-      showBlindSelect();
-      render();
-      flashMessage("📂 已恢复上局进度（回到盲注选择）");
-    }
-    return true;
-  } catch (e) { return false; }
-}
-
-function newGameState(seed) {
-  const s = (seed ?? Date.now()) >>> 0;
-  seedRNG(s);
-  Object.assign(G, {
-    seed: s,
-    deck: [], hand: [], selected: new Set(),
-    jokers: [], maxJokers: 5,
-    money: 4, ante: 1, round: 0,
-    handSize: 8, maxHands: 4, maxDiscards: 3,
-    handsLeft: 4, discardsLeft: 3,
-    bonusHands: 0, bonusDiscards: 0, freeReroll: 0,
-    roundScore: 0, target: 0,
-    blindIndex: 0,           // 0 小盲 1 大盲 2 Boss
-    boss: null, currentBoss: null,
-    skippedBoss: false,
-    handLevels: Object.fromEntries(Object.keys(HAND_TYPES).map(k => [k, 1])),
-    handPlayCounts: {},
-    shopStock: [], rerollCost: 5,
-    scoring: false, speed: 1,
-    state: "blind-select",
-  });
-}
-
-function newGame(seed) {
-  newGameState(seed);
-  pickBoss();
-  showBlindSelect();
-  render();
-}
-
-function pickBoss() { G.boss = rnd(BOSSES); }
-
-function buildDeck() {
-  G.deck = [];
-  let uid = 0;
-  for (const s of SUITS) for (const r of RANKS)
-    G.deck.push({ suit: s, rank: r, id: `c${uid++}` });
-  // 洗牌
-  for (let i = G.deck.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [G.deck[i], G.deck[j]] = [G.deck[j], G.deck[i]];
-  }
-}
-
-/* ---------- 盲注 ---------- */
-function blindTarget(idx) {
-  const base = ANTE_BASE[G.ante - 1] ?? ANTE_BASE[ANTE_BASE.length - 1];
-  const mults = [1, 1.5, G.boss?.id === "wall" ? 4 : 2];
-  return Math.floor(base * (mults[idx] ?? 1));
-}
-const BLIND_META = [
-  { name: "小盲注", cls: "", chip: "", reward: 3 },
-  { name: "大盲注", cls: "big-blind", chip: "big", reward: 4 },
-  { name: "Boss盲注", cls: "boss-blind", chip: "boss", reward: 5 },
-];
-
+/* ---------- 盲注选择 ---------- */
 function showBlindSelect() {
   G.state = "blind-select";
   const box = $("blind-options");
@@ -473,128 +129,6 @@ function startBlind(idx) {
   render();
 }
 
-function drawToFull() {
-  while (G.hand.length < G.curHandSize && G.deck.length > 0) {
-    const c = G.deck.pop();
-    c.isNew = true;           // 用于发牌动画
-    G.hand.push(c);
-  }
-  sortHand(G.sortMode || "rank");
-}
-
-function sortHand(mode) {
-  G.sortMode = mode;
-  if (mode === "rank")
-    G.hand.sort((a, b) => RANK_VAL[b.rank] - RANK_VAL[a.rank] || SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit));
-  else
-    G.hand.sort((a, b) => SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit) || RANK_VAL[b.rank] - RANK_VAL[a.rank]);
-}
-
-/* ---------- 牌型判定 ---------- */
-function isDebuffed(card) {
-  if (!G.currentBoss) return false;
-  const map = { club: "♣", goad: "♠", window: "♦", head: "♥" };
-  return map[G.currentBoss.id] === card.suit;
-}
-
-function evaluate(cards) {
-  const active = cards.filter(c => !isDebuffed(c));
-  const ranks = active.map(c => RANK_VAL[c.rank]);
-  const counts = {};
-  ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
-  const groups = Object.values(counts).sort((a, b) => b - a);
-  const suits = new Set(active.map(c => c.suit));
-  const isFlush = active.length === 5 && suits.size === 1;
-  let isStraight = false;
-  if (active.length === 5) {
-    const u = [...new Set(ranks)].sort((a, b) => a - b);
-    if (u.length === 5) {
-      isStraight = u[4] - u[0] === 4 ||
-        (u.join() === "2,3,4,5,14");  // A-2-3-4-5
-    }
-  }
-  let type;
-  if (isFlush && groups[0] === 5) type = "flush_five";
-  else if (isFlush && isStraight) type = "straight_flush";
-  else if (groups[0] === 4) type = "four_kind";
-  else if (groups[0] === 3 && groups[1] === 2) type = "full_house";
-  else if (isFlush) type = "flush";
-  else if (isStraight) type = "straight";
-  else if (groups[0] === 3) type = "three_kind";
-  else if (groups[0] === 2 && groups[1] === 2) type = "two_pair";
-  else if (groups[0] === 2) type = "pair";
-  else type = "high_card";
-
-  // 计分牌：组成牌型的牌（高牌只算最大那张）
-  let scoringCards;
-  if (type === "high_card") {
-    const best = active.slice().sort((a, b) => RANK_VAL[b.rank] - RANK_VAL[a.rank])[0];
-    scoringCards = best ? [best] : [];
-  } else if (["pair", "two_pair", "three_kind", "four_kind", "full_house"].includes(type)) {
-    scoringCards = active.filter(c => counts[RANK_VAL[c.rank]] >= 2);
-  } else {
-    scoringCards = active.slice();
-  }
-  return {
-    type, scoringCards,
-    activeCount: active.length,
-    hasPair: groups[0] >= 2,
-    hasThree: groups[0] >= 3,
-  };
-}
-
-function handStats(type) {
-  const def = HAND_TYPES[type];
-  const lvl = G.handLevels[type];
-  return {
-    chips: def.chips + def.up[0] * (lvl - 1),
-    mult: def.mult + def.up[1] * (lvl - 1),
-    lvl,
-  };
-}
-
-/* ---------- 纯函数计分 ----------
-   不触碰 DOM / 音效 / 动画，返回完整的计分步骤序列，
-   playHand 只负责按步骤播放，测试可直接断言 total。 */
-function computeScoring(cards, g = G) {
-  const ev = evaluate(cards);
-  const stats = handStats(ev.type);
-  // 打出的牌全部被 Boss 禁用 → 0 分
-  if (cards.length > 0 && ev.activeCount === 0) {
-    return { ev, stats, ctx: null, steps: [], chips: 0, mult: 0, total: 0, allDebuffed: true };
-  }
-  const ctx = {
-    type: ev.type, cards, playedCount: cards.length,
-    hasPair: ev.hasPair, hasThree: ev.hasThree,
-    firstFace: cards.find(c => ["J", "Q", "K"].includes(c.rank) && !isDebuffed(c)) || null,
-  };
-  let chips = stats.chips, mult = stats.mult;
-  const steps = [];
-  const applyEffect = (j, r) => {
-    if (r.chips) chips += r.chips;
-    if (r.mult) mult += r.mult;
-    if (r.xmult) mult = Math.round(mult * r.xmult * 100) / 100;
-    steps.push({ kind: "joker", joker: j, effect: r, chips, mult });
-  };
-  for (const c of ev.scoringCards) {
-    chips += CHIP_VAL(c.rank);
-    steps.push({ kind: "card", card: c, add: CHIP_VAL(c.rank), chips, mult });
-    for (const j of g.jokers) {
-      const def = JOKER_BY_ID.get(j.id);
-      if (!def?.perCard) continue;
-      const r = def.perCard(c, ctx, g, j);
-      if (r) applyEffect(j, r);
-    }
-  }
-  for (const j of g.jokers) {
-    const def = JOKER_BY_ID.get(j.id);
-    if (!def?.after) continue;
-    const r = def.after(ctx, g, j);
-    if (r) applyEffect(j, r);
-  }
-  return { ev, stats, ctx, steps, chips, mult, total: Math.floor(chips * mult), allDebuffed: false };
-}
-
 /* ---------- 选牌 ---------- */
 function toggleSelect(card) {
   if (G.scoring || G.state !== "playing") return;
@@ -606,8 +140,6 @@ function toggleSelect(card) {
   if (el) el.classList.toggle("selected", G.selected.has(card.id));
   renderPreview();
 }
-
-function selectedCards() { return G.hand.filter(c => G.selected.has(c.id)); }
 
 /* ---------- 出牌计分 ---------- */
 async function playHand() {
@@ -641,6 +173,8 @@ async function playHand() {
   const ev0 = evaluate(cards);
   G.handPlayCounts[ev0.type] = (G.handPlayCounts[ev0.type] || 0) + 1;
   const sc = computeScoring(cards);
+  if (!sc.allDebuffed && (!G.bestHand || sc.total > G.bestHand.total))
+    G.bestHand = { type: sc.ev.type, total: sc.total };
 
   if (sc.allDebuffed) {
     $("hand-name").textContent = "🚫 全部禁用";
@@ -660,7 +194,10 @@ async function playHand() {
         curEl = cardEls.get(step.card.id) || null;
         if (curEl) curEl.classList.add("scoring");
         AudioFX.chip(chipIdx++);
-        if (curEl) floatText(curEl, `+${step.add}`, "chips");
+        if (curEl) {
+          floatText(curEl, `+${step.add}`, "chips");
+          if (step.enhMult) floatText(curEl, `+${step.enhMult} 倍率`, "mult");
+        }
         setCalc(step.chips, step.mult, "chips");
         await sleep(260);
       } else {
@@ -853,7 +390,7 @@ async function winRound() {
     // Boss 击败 → 下一底注
     if (G.blindIndex === 2) {
       G.ante++;
-      if (G.ante > MAX_ANTE) { gameOver(true); return; }
+      if (!G.endless && G.ante > MAX_ANTE) { gameOver(true); return; }
       G.blindIndex = 0;
       pickBoss();
     } else {
@@ -863,22 +400,6 @@ async function winRound() {
     openShop();
   };
   $("cashout").classList.remove("hidden");
-}
-
-function rollShop() {
-  G.shopStock = [];
-  const owned = new Set(G.jokers.map(j => j.id));
-  const pool = JOKER_DEFS.filter(d => !owned.has(d.id));
-  const weights = { common: 12, uncommon: 5, rare: 2, legendary: 1 };
-  for (let i = 0; i < 2 && pool.length; i++) {
-    const bag = [];
-    pool.forEach(d => { for (let w = 0; w < weights[d.rarity]; w++) bag.push(d); });
-    const pick = rnd(bag);
-    pool.splice(pool.indexOf(pick), 1);
-    G.shopStock.push({ kind: "joker", def: pick, sold: false });
-  }
-  G.shopStock.push({ kind: "planet", def: rnd(PLANETS), sold: false });
-  G.shopStock.push({ kind: "tarot", def: rnd(TAROTS), sold: false });
 }
 
 function openShop() {
@@ -923,7 +444,8 @@ function renderShop() {
     buyBtn.className = "btn btn-orange buy-btn";
     buyBtn.textContent = item.sold ? "已售" : "购买";
     buyBtn.disabled = item.sold || G.money < price ||
-      (item.kind === "joker" && G.jokers.length >= G.maxJokers);
+      (item.kind === "joker" && G.jokers.length >= G.maxJokers) ||
+      (item.kind === "tarot" && G.consumables.length >= G.maxConsumables);
     buyBtn.onclick = () => buyItem(item, price);
     wrap.append(priceEl, cardEl, buyBtn);
     box.appendChild(wrap);
@@ -934,14 +456,14 @@ function renderShop() {
 
 function buyItem(item, price) {
   if (G.money < price || item.sold) return;
+  if (item.kind === "tarot" && G.consumables.length >= G.maxConsumables) return;
   G.money -= price;
   item.sold = true;
   AudioFX.buy();
   if (item.kind === "joker") {
     G.jokers.push({ id: item.def.id, uid: "j" + Date.now() + Math.random().toString(36).slice(2, 5) });
   } else if (item.kind === "tarot") {
-    const msg = item.def.apply(G);
-    flashMessage(`${item.def.icon} ${item.def.name}: ${msg}`);
+    G.consumables.push({ id: item.def.id, uid: "t" + Date.now() + Math.random().toString(36).slice(2, 5) });
   } else {
     G.handLevels[item.def.hand]++;
     flashMessage(`${item.def.icon} ${HAND_TYPES[item.def.hand].name} 升到 Lv.${G.handLevels[item.def.hand]}!`);
@@ -964,7 +486,80 @@ function sellJoker(j) {
   if (G.state === "shop") renderShop();
 }
 
+/* ---------- 消耗品（塔罗）使用 ---------- */
+function useConsumable(cons) {
+  if (G.scoring) return false;
+  const def = TAROT_BY_ID.get(cons.id);
+  let msg;
+  if (def.targets) {
+    if (G.state !== "playing") { flashMessage("🔒 只能在回合中对手牌使用"); return false; }
+    const sel = selectedCards();
+    const [min, max] = def.targets;
+    if (sel.length < min || sel.length > max) {
+      flashMessage(`请先选中 ${min === max ? min : `${min}-${max}`} 张手牌`);
+      return false;
+    }
+    msg = def.applyCards(sel, G);
+    G.selected.clear();
+  } else {
+    msg = def.apply(G);
+  }
+  G.consumables = G.consumables.filter(x => x !== cons);
+  AudioFX.buy();
+  flashMessage(`${def.icon} ${def.name}: ${msg}`);
+  hideTooltip();
+  saveGame();
+  render();
+  if (G.state === "shop") renderShop();
+  return true;
+}
+
+function makeConsumableEl(cons) {
+  const def = TAROT_BY_ID.get(cons.id);
+  const el = document.createElement("div");
+  el.className = "consumable";
+  el.dataset.uid = cons.uid;
+  el.innerHTML = `<div class="c-icon">${def.icon}</div><div class="c-name">${def.name}</div>`;
+  el.onmouseenter = e => showTarotTip(e, def);
+  el.onmousemove = e => moveTooltip(e);
+  el.onmouseleave = () => { hideTooltip(); cancelSellConfirm(el); };
+  // 双击确认使用（与小丑牌卖出一致的交互）
+  el.onclick = e => {
+    if (el.classList.contains("confirm-sell")) { cancelSellConfirm(el); useConsumable(cons); return; }
+    if (NO_HOVER) showTarotTip(e, def);
+    document.querySelectorAll(".consumable.confirm-sell, .joker.confirm-sell").forEach(cancelSellConfirm);
+    el.classList.add("confirm-sell");
+    const badge = document.createElement("div");
+    badge.className = "sell-badge";
+    badge.textContent = def.targets ? "再点一次对选中手牌使用" : "再点一次使用";
+    el.appendChild(badge);
+    el._sellTimer = setTimeout(() => cancelSellConfirm(el), 2500);
+  };
+  return el;
+}
+
+function renderConsumables() {
+  const box = $("consumables");
+  box.innerHTML = "";
+  G.consumables.forEach(c => box.appendChild(makeConsumableEl(c)));
+  for (let i = G.consumables.length; i < G.maxConsumables; i++) {
+    const s = document.createElement("div");
+    s.className = "consumable-slot";
+    box.appendChild(s);
+  }
+  $("consumable-count").textContent = `${G.consumables.length}/${G.maxConsumables}`;
+}
+
 /* ---------- 结束 ---------- */
+function runStatsHTML() {
+  const played = Object.entries(G.handPlayCounts).sort((a, b) => b[1] - a[1]);
+  let s = `<div class="end-stats">回合数 ${G.round}`;
+  if (played[0]) s += ` · 最常出牌型: ${HAND_TYPES[played[0][0]].name} ×${played[0][1]}`;
+  if (G.bestHand) s += `<br>最佳出牌: ${HAND_TYPES[G.bestHand.type].name} ${fmt(G.bestHand.total)} 分`;
+  s += `<br>种子: ${G.seed}`;
+  return s + `</div>`;
+}
+
 function gameOver(win) {
   G.state = "over";
   localStorage.removeItem(SAVE_KEY);
@@ -972,13 +567,15 @@ function gameOver(win) {
   if (win) confetti(220);
   $("end-title").textContent = win ? "🎉 通关胜利!" : "游戏结束";
   $("end-title").className = "end-title " + (win ? "win" : "lose");
-  $("end-detail").innerHTML = win
+  $("end-detail").innerHTML = (win
     ? `你击败了全部 ${MAX_ANTE} 个底注!<br>最终资金: $${G.money}`
-    : `倒在了 底注 ${G.ante} · ${G.blindIndex === 2 ? G.boss.name : BLIND_META[G.blindIndex].name}<br>差 ${fmt(Math.max(0, G.target - G.roundScore))} 分`;
+    : `倒在了 ${G.endless ? "无尽模式 · " : ""}底注 ${G.ante} · ${G.blindIndex === 2 ? G.boss.name : BLIND_META[G.blindIndex].name}<br>差 ${fmt(Math.max(0, G.target - G.roundScore))} 分`)
+    + runStatsHTML();
+  $("endless-btn").classList.toggle("hidden", !win);
   $("end-screen").classList.remove("hidden");
 }
 
-/* ---------- 渲染 ---------- */
+/* ---------- 卡面渲染 ---------- */
 /* 标准扑克点阵排布 [x%, y%, 是否倒转] */
 const PIP_LAYOUTS = {
   "2": [[50, 22], [50, 78, 1]],
@@ -1021,7 +618,12 @@ function makeCardEl(c) {
     ).join("");
     center = `<div class="pips">${pips}</div>`;
   }
-  el.innerHTML = corners + center + `<div class="card-gloss"></div>`;
+  let enhMark = "";
+  if (c.enh && ENH[c.enh]) {
+    el.classList.add(`enh-${c.enh}`);
+    enhMark = `<div class="enh-mark" title="${ENH[c.enh].name}: ${ENH[c.enh].desc}">${ENH[c.enh].icon}</div>`;
+  }
+  el.innerHTML = corners + center + enhMark + `<div class="card-gloss"></div>`;
   return el;
 }
 
@@ -1069,7 +671,7 @@ function renderHand() {
     c.isNew = false;
     box.appendChild(el);
   });
-  $("deck-count").textContent = `${G.deck.length}/52`;
+  $("deck-count").textContent = `${G.deck.length}/${G.masterDeck.length}`;
 }
 
 function makeJokerEl(j, isShop = false) {
@@ -1088,7 +690,7 @@ function makeJokerEl(j, isShop = false) {
   if (!isShop) el.onclick = e => {
     if (el.classList.contains("confirm-sell")) { sellJoker(j); return; }
     if (NO_HOVER) showTooltip(e, def, false);   // 触屏首次点击先看说明
-    document.querySelectorAll(".joker.confirm-sell").forEach(cancelSellConfirm);
+    document.querySelectorAll(".joker.confirm-sell, .consumable.confirm-sell").forEach(cancelSellConfirm);
     el.classList.add("confirm-sell");
     const badge = document.createElement("div");
     badge.className = "sell-badge";
@@ -1106,6 +708,15 @@ function showTooltip(e, def, isShop) {
     <div class="tt-rarity ${def.rarity}">${rarityName}</div>
     <div class="tt-desc">${def.desc}</div>
     ${isShop ? "" : `<div class="tt-sell">点击卖出 $${sellValue(def)}</div>`}`;
+  tt.classList.remove("hidden");
+  moveTooltip(e);
+}
+function showTarotTip(e, def) {
+  const tt = $("tooltip");
+  tt.innerHTML = `<div class="tt-title">${def.icon} ${def.name}</div>
+    <div class="tt-rarity uncommon">塔罗牌</div>
+    <div class="tt-desc">${def.desc}</div>
+    <div class="tt-sell">${def.targets ? "选中手牌后点击使用" : "点击使用"}</div>`;
   tt.classList.remove("hidden");
   moveTooltip(e);
 }
@@ -1139,9 +750,10 @@ function renderStats() {
   $("hands-left").textContent = G.handsLeft;
   $("discards-left").textContent = G.discardsLeft;
   $("money").textContent = "$" + G.money;
-  $("ante").textContent = G.ante;
+  $("ante").textContent = G.ante + (G.endless ? "∞" : "");
   $("round").textContent = G.round;
   $("round-score").textContent = fmt(G.roundScore);
+  $("seed-line").textContent = `种子 ${G.seed ?? "-"}${G.seed === todaySeed() ? " · 今日挑战" : ""}`;
   const m = BLIND_META[G.blindIndex] || BLIND_META[0];
   const isBoss = G.blindIndex === 2 && G.state === "playing";
   $("blind-name").textContent = isBoss ? `${G.boss.icon} ${G.boss.name}` : m.name;
@@ -1181,6 +793,7 @@ function renderPreview() {
 function render() {
   renderHand();
   renderJokers();
+  renderConsumables();
   renderStats();
   renderPreview();
 }
@@ -1200,25 +813,44 @@ function showRunInfo() {
 }
 
 /* ---------- 事件绑定 ---------- */
+/* 双击确认的破坏性按钮（重新开局 / 今日挑战） */
+function bindConfirmButton(btn, label, confirmLabel, action) {
+  btn.onclick = () => {
+    if (btn.dataset.confirm) {
+      delete btn.dataset.confirm;
+      btn.textContent = label;
+      action();
+    } else {
+      btn.dataset.confirm = "1";
+      btn.textContent = confirmLabel;
+      setTimeout(() => { delete btn.dataset.confirm; btn.textContent = label; }, 2500);
+    }
+  };
+}
+
+function startFreshGame(seed) {
+  localStorage.removeItem(SAVE_KEY);
+  document.querySelectorAll(".overlay").forEach(o => o.classList.add("hidden"));
+  newGame(seed);
+}
+
 $("play-btn").onclick = playHand;
 $("discard-btn").onclick = discard;
 $("sort-rank").onclick = () => { sortHand("rank"); render(); };
 $("sort-suit").onclick = () => { sortHand("suit"); render(); };
 $("run-info-btn").onclick = showRunInfo;
-$("new-run-btn").onclick = () => {
-  // 双击确认，防误触丢档
-  const btn = $("new-run-btn");
-  if (btn.dataset.confirm) {
-    delete btn.dataset.confirm;
-    btn.textContent = "重新开局";
-    localStorage.removeItem(SAVE_KEY);
-    document.querySelectorAll(".overlay").forEach(o => o.classList.add("hidden"));
-    newGame();
-  } else {
-    btn.dataset.confirm = "1";
-    btn.textContent = "确认放弃本局?";
-    setTimeout(() => { delete btn.dataset.confirm; btn.textContent = "重新开局"; }, 2500);
-  }
+bindConfirmButton($("new-run-btn"), "重新开局", "确认放弃本局?", () => startFreshGame());
+bindConfirmButton($("daily-btn"), "今日挑战", "确认放弃本局?", () => {
+  startFreshGame(todaySeed());
+  flashMessage(`📅 今日挑战 · 种子 ${G.seed}`);
+});
+$("seed-line").onclick = () => {
+  const v = typeof window.prompt === "function"
+    ? window.prompt("输入种子开始新局（将放弃当前进度，留空取消）:", "") : null;
+  if (!v || !v.trim()) return;
+  const t = v.trim();
+  startFreshGame(/^\d+$/.test(t) ? parseInt(t, 10) : hashStr(t));
+  flashMessage(`🎲 种子 ${G.seed}`);
 };
 $("close-info-btn").onclick = () => $("run-info").classList.add("hidden");
 $("reroll-btn").onclick = () => {
@@ -1236,6 +868,15 @@ $("next-round-btn").onclick = () => {
 $("restart-btn").onclick = () => {
   $("end-screen").classList.add("hidden");
   newGame();
+};
+$("endless-btn").onclick = () => {
+  G.endless = true;
+  $("end-screen").classList.add("hidden");
+  G.blindIndex = 0;
+  pickBoss();
+  openShop();
+  saveGame();
+  flashMessage("♾️ 无尽模式!目标分数将持续增长");
 };
 
 /* 手牌点击：容器级事件委托 */
@@ -1255,7 +896,7 @@ document.addEventListener("pointerdown", e => {
     G.speed = 4;
     flashMessage("⏩ 加速");
   }
-  if (NO_HOVER && !e.target?.closest?.(".joker")) hideTooltip();
+  if (NO_HOVER && !e.target?.closest?.(".joker, .consumable")) hideTooltip();
 });
 
 /* 键盘操作：1-9 选牌 / Enter 出牌 / X 弃牌 / R 点数排序 / S 花色排序 / M 静音 */
@@ -1278,6 +919,12 @@ document.addEventListener("keydown", e => {
   } else if (k === "r") { sortHand("rank"); render(); }
   else if (k === "s") { sortHand("suit"); render(); }
 });
+
+/* ---------- PWA ---------- */
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator &&
+    typeof location !== "undefined" && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("sw.js").catch(() => { /* 离线支持是增强项 */ });
+}
 
 /* ---------- 启动 ---------- */
 if (!loadGame()) newGame();

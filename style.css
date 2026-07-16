@@ -930,3 +930,78 @@ body::after {
     transition-duration: .01ms !important;
   }
 }
+
+/* ===== 小丑 + 消耗品分栏 ===== */
+#joker-row { display: flex; gap: 14px; }
+#joker-sec { flex: 1; min-width: 0; }
+#consumable-sec { flex: none; }
+#consumables {
+  display: flex;
+  gap: 8px;
+  height: 132px;
+  background: rgba(0,0,0,.18);
+  border-radius: 12px;
+  padding: 4px 8px;
+  align-items: center;
+}
+.consumable {
+  position: relative;
+  width: 82px; height: 112px;
+  border-radius: 10px;
+  background: linear-gradient(160deg, #3a1a4e, #180a2e);
+  border: 2px solid #8a4ac0;
+  box-shadow: 0 4px 6px rgba(0,0,0,.45);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform .15s;
+}
+.consumable:hover { transform: translateY(-4px); }
+.consumable .c-icon { font-size: 30px; filter: drop-shadow(0 0 6px rgba(200,140,255,.6)); }
+.consumable .c-name { font-size: 11px; font-weight: 800; color: #d0a0ff; }
+.consumable-slot {
+  width: 82px; height: 112px;
+  border-radius: 10px;
+  border: 2px dashed rgba(255,255,255,.15);
+}
+
+/* ===== 卡牌增强 ===== */
+.card.enh-bonus { box-shadow: 0 0 0 2px #2c8fd8, 0 0 12px rgba(44,143,216,.55), 0 4px 8px rgba(0,0,0,.4); }
+.card.enh-mult  { box-shadow: 0 0 0 2px #d84c3e, 0 0 12px rgba(216,76,62,.55), 0 4px 8px rgba(0,0,0,.4); }
+.enh-mark {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* ===== 种子 / 结束统计 ===== */
+.seed-line { cursor: pointer; user-select: none; }
+.seed-line:hover { color: #fff; }
+.end-stats {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.12);
+  font-size: 13px;
+  color: rgba(255,255,255,.6);
+  line-height: 1.7;
+}
+#endless-btn { margin-right: 10px; }
+
+/* 窄屏: 消耗品换行 */
+@media (max-width: 980px) {
+  #joker-row { flex-wrap: wrap; }
+  #consumables { height: auto; min-height: 96px; }
+  .consumable, .consumable-slot { width: 70px; height: 96px; }
+}
+
+/* 盲注选择是常驻主界面：遮罩避开侧边栏，保持「重新开局/今日挑战/牌型等级」可用 */
+#blind-select { left: 253px; }
+@media (max-width: 980px) { #blind-select { left: 0; } }
