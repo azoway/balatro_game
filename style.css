@@ -897,3 +897,36 @@ body::after {
   .total-burst .tb-total { font-size: 38px; }
   .total-burst .tb-chips, .total-burst .tb-mult { font-size: 26px; }
 }
+
+/* ===== 提示消息（原内联样式移入类） ===== */
+.flash-msg {
+  position: fixed;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10,20,18,.92);
+  border: 2px solid #7a1fa0;
+  border-radius: 12px;
+  padding: 12px 26px;
+  font-size: 18px;
+  font-weight: 800;
+  z-index: 300;
+  animation: fadeIn .2s;
+}
+
+/* ===== 塔罗牌 ===== */
+.tarot-card {
+  background: linear-gradient(160deg, #3a1a4e, #180a2e);
+  border-color: #8a4ac0;
+}
+.tarot-card .p-icon { filter: drop-shadow(0 0 6px rgba(200,140,255,.6)); }
+.tarot-card .p-name { color: #d0a0ff; }
+
+/* ===== 减少动态效果偏好 ===== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
