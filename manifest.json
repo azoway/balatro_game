@@ -4,7 +4,7 @@
   "description": "Balatro 风格的纯前端网页卡牌游戏",
   "start_url": ".",
   "display": "standalone",
-  "orientation": "landscape",
+  "orientation": "any",
   "background_color": "#0a1a16",
   "theme_color": "#0a1a16",
   "icons": [

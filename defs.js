@@ -225,6 +225,57 @@ const JOKER_DEFS = [
     desc: { zh: "×1 倍率，每弃掉一张人头牌永久 +0.5", en: "×1 Mult, gains +0.5 permanently per discarded face card" },
     after: (s, g, j) => ({ xmult: 1 + (j.state || 0) }),
     onDiscard: (cards, g, j) => { j.state = (j.state || 0) + cards.filter(c => ["J", "Q", "K"].includes(c.rank)).length * 0.5; } },
+
+  /* --- 重触发类: retrigger(card, ctx, g, j) 返回额外触发次数 --- */
+  { id: "hack", icon: "💻", rarity: "uncommon", cost: 6,
+    name: { zh: "黑客", en: "Hack" },
+    desc: { zh: "打出的每张 2/3/4/5 重新触发一次", en: "Retrigger each played 2, 3, 4 or 5" },
+    retrigger: c => ["2", "3", "4", "5"].includes(c.rank) ? 1 : 0 },
+  { id: "sock_buskin", icon: "👺", rarity: "uncommon", cost: 7,
+    name: { zh: "悲喜面具", en: "Sock and Buskin" },
+    desc: { zh: "打出的每张人头牌重新触发一次", en: "Retrigger each played face card" },
+    retrigger: c => ["J", "Q", "K"].includes(c.rank) ? 1 : 0 },
+  { id: "dusk", icon: "🌆", rarity: "uncommon", cost: 7,
+    name: { zh: "黄昏", en: "Dusk" },
+    desc: { zh: "最后一次出牌时，所有牌重新触发一次", en: "Retrigger all played cards on the final hand of the round" },
+    retrigger: (c, s, g) => g.handsLeft === 0 ? 1 : 0 },
+
+  /* --- 成长类: onPlay(ctx, g, j) 在每手结算后调用，可返回 "destroy" --- */
+  { id: "green_joker", icon: "🥒", rarity: "common", cost: 4,
+    name: { zh: "绿色小丑", en: "Green Joker" },
+    desc: { zh: "每出一手牌 +1 倍率，每弃一次牌 -1 倍率", en: "+1 Mult per hand played, -1 Mult per discard" },
+    after: (s, g, j) => (j.state || 0) > 0 ? { mult: j.state } : null,
+    onPlay: (s, g, j) => { j.state = (j.state || 0) + 1; },
+    onDiscard: (cards, g, j) => { j.state = Math.max(0, (j.state || 0) - 1); } },
+  { id: "ride_the_bus", icon: "🚌", rarity: "common", cost: 5,
+    name: { zh: "坐公交", en: "Ride the Bus" },
+    desc: { zh: "每连续打出一手不含人头牌的牌 +1 倍率，打出人头牌则重置", en: "+1 Mult per consecutive hand without face cards; resets when a face card is played" },
+    after: (s, g, j) => (j.state || 0) > 0 ? { mult: j.state } : null,
+    onPlay: (s, g, j) => {
+      if (s.cards.some(c => ["J", "Q", "K"].includes(c.rank))) j.state = 0;
+      else j.state = (j.state || 0) + 1;
+    } },
+  { id: "ice_cream", icon: "🍦", rarity: "common", cost: 4,
+    name: { zh: "冰淇淋", en: "Ice Cream" },
+    desc: { zh: "+100 筹码，每出一手牌融化 -5，融尽后消失", en: "+100 Chips, melts by 5 per hand played; gone when it reaches 0" },
+    after: (s, g, j) => {
+      const v = 100 - 5 * (j.state || 0);
+      return v > 0 ? { chips: v } : null;
+    },
+    onPlay: (s, g, j) => {
+      j.state = (j.state || 0) + 1;
+      if (100 - 5 * j.state <= 0) return "destroy";
+    } },
+  { id: "square", icon: "🟦", rarity: "common", cost: 4,
+    name: { zh: "方形小丑", en: "Square Joker" },
+    desc: { zh: "打出的手牌恰为 4 张时，永久 +4 筹码", en: "Gains +4 Chips permanently when played hand has exactly 4 cards" },
+    after: (s, g, j) => (j.state || 0) > 0 ? { chips: j.state } : null,
+    onPlay: (s, g, j) => { if (s.playedCount === 4) j.state = (j.state || 0) + 4; } },
+  { id: "flash_card", icon: "⚡", rarity: "uncommon", cost: 6,
+    name: { zh: "闪卡", en: "Flash Card" },
+    desc: { zh: "每次商店刷新 +2 倍率", en: "+2 Mult per shop reroll" },
+    after: (s, g, j) => (j.state || 0) > 0 ? { mult: j.state } : null,
+    onReroll: (g, j) => { j.state = (j.state || 0) + 2; } },
 ];
 const JOKER_BY_ID = new Map(JOKER_DEFS.map(d => [d.id, d]));
 const sellValue = def => Math.max(1, Math.floor(def.cost / 2));
@@ -368,6 +419,40 @@ const VOUCHERS = [
     apply: g => { g.bonusHands++; } },
 ];
 const VOUCHER_BY_ID = new Map(VOUCHERS.map(v => [v.id, v]));
+
+/* ---------- 小丑牌版本（商店随机附带，加价出售） ---------- */
+const EDITIONS = {
+  foil: { name: { zh: "闪箔", en: "Foil" }, desc: { zh: "+50 筹码", en: "+50 Chips" },
+    effect: { chips: 50 }, costUp: 2 },
+  holo: { name: { zh: "全息", en: "Holographic" }, desc: { zh: "+10 倍率", en: "+10 Mult" },
+    effect: { mult: 10 }, costUp: 3 },
+  poly: { name: { zh: "多彩", en: "Polychrome" }, desc: { zh: "×1.5 倍率", en: "×1.5 Mult" },
+    effect: { xmult: 1.5 }, costUp: 5 },
+};
+
+/* ---------- 起始牌组 ---------- */
+const DECKS = [
+  { id: "classic", icon: "🂠",
+    name: { zh: "经典牌组", en: "Classic Deck" },
+    desc: { zh: "无修正", en: "No modifiers" },
+    apply: g => {} },
+  { id: "red", icon: "🟥",
+    name: { zh: "红牌组", en: "Red Deck" },
+    desc: { zh: "每回合弃牌次数 +1", en: "+1 discard per round" },
+    apply: g => { g.bonusDiscards++; } },
+  { id: "blue", icon: "🟦",
+    name: { zh: "蓝牌组", en: "Blue Deck" },
+    desc: { zh: "每回合出牌次数 +1", en: "+1 hand per round" },
+    apply: g => { g.bonusHands++; } },
+  { id: "yellow", icon: "🟨",
+    name: { zh: "黄牌组", en: "Yellow Deck" },
+    desc: { zh: "开局携带 $10", en: "Start with $10" },
+    apply: g => { g.money = 10; } },
+  { id: "ghost", icon: "👻",
+    name: { zh: "幽灵牌组", en: "Ghost Deck" },
+    desc: { zh: "开局携带 1 张随机塔罗牌", en: "Start with a random Tarot card" },
+    apply: g => { g.consumables.push({ id: rnd(TAROTS).id, uid: "t0" }); } },
+];
 
 /* ---------- 跳过盲注的标签奖励 ---------- */
 const SKIP_TAGS = [

@@ -197,6 +197,7 @@ async function playHand() {
         AudioFX.chip(chipIdx++);
         if (curEl) {
           floatText(curEl, `+${step.add}`, "chips");
+          if (step.again) floatText(curEl, S("again_word"), "mult");
           if (step.enhMult) floatText(curEl, `+${step.enhMult} ${S("mult_word")}`, "mult");
         }
         setCalc(step.chips, step.mult, "chips");
@@ -229,6 +230,18 @@ async function playHand() {
     await countUp(G.roundScore, G.roundScore + sc.total, 600);
   }
   G.roundScore += sc.total;
+
+  // 成长类小丑钩子（绿色小丑 / 坐公交 / 冰淇淋…），可返回 "destroy"
+  const ctxLite = sc.ctx || { cards, type: ev0.type, playedCount: cards.length, hasPair: ev0.hasPair, hasThree: ev0.hasThree };
+  const melted = G.jokers.filter(j => {
+    const def = JOKER_BY_ID.get(j.id);
+    return def?.onPlay && def.onPlay(ctxLite, G, j) === "destroy";
+  });
+  for (const j of melted) {
+    const def = JOKER_BY_ID.get(j.id);
+    flashMessage(S("eaten_flash", `${def.icon} ${L(def.name)}`));
+    G.jokers = G.jokers.filter(x => x !== j);
+  }
   await sleep(500);
 
   // 清理出牌区
@@ -447,8 +460,8 @@ function renderShop() {
     wrap.className = "shop-item" + (item.sold ? " sold" : "");
     let cardEl, price;
     if (item.kind === "joker") {
-      price = item.def.cost;
-      cardEl = makeJokerEl({ id: item.def.id, uid: "shop" + idx }, true);
+      price = item.def.cost + (item.ed ? EDITIONS[item.ed].costUp : 0);
+      cardEl = makeJokerEl({ id: item.def.id, uid: "shop" + idx, ed: item.ed }, true);
     } else if (item.kind === "tarot") {
       price = item.def.cost;
       cardEl = makeShopMiniCard("tarot-card", item.def.icon, L(item.def.name), L(item.def.desc));
@@ -488,7 +501,7 @@ function buyItem(item, price) {
   item.sold = true;
   AudioFX.buy();
   if (item.kind === "joker") {
-    G.jokers.push({ id: item.def.id, uid: "j" + Date.now() + Math.random().toString(36).slice(2, 5) });
+    G.jokers.push({ id: item.def.id, uid: "j" + Date.now() + Math.random().toString(36).slice(2, 5), ed: item.ed || undefined });
   } else if (item.kind === "tarot") {
     G.consumables.push({ id: item.def.id, uid: "t" + Date.now() + Math.random().toString(36).slice(2, 5) });
   } else if (item.kind === "pack") {
@@ -665,7 +678,7 @@ function showDeckView() {
   $("deck-view").classList.remove("hidden");
 }
 
-/* ---------- 图鉴 / 跨局统计 ---------- */
+/* ---------- 图鉴 / 跨局统计 / 对局历史 ---------- */
 function showCollection() {
   const s = loadStats();
   const seen = new Set(s.seenJokers || []);
@@ -675,13 +688,30 @@ function showCollection() {
   $("collection-grid").innerHTML = JOKER_DEFS.map(d => seen.has(d.id)
     ? `<div class="cl-item" title="${L(d.desc)}"><div class="cl-icon">${d.icon}</div><div class="cl-name">${L(d.name)}</div></div>`
     : `<div class="cl-item cl-unknown"><div class="cl-icon">❓</div><div class="cl-name">???</div></div>`).join("");
+  const hist = s.history || [];
+  $("run-history").innerHTML = hist.length
+    ? hist.map(h => {
+        const deck = DECKS.find(d => d.id === h.deck) || DECKS[0];
+        return `<div class="rh-row">
+          <span class="rh-date">${h.d}</span>
+          <span>${h.win ? "🏆" : "💀"} ${S("ante_word")} ${h.ante}${h.endless ? "∞" : ""} · ${deck.icon}</span>
+          <span class="rh-seed">${h.seed}</span>
+          <button class="small-btn rh-replay" data-seed="${h.seed}" title="${S("replay_tip")}">↻</button>
+        </div>`;
+      }).join("")
+    : `<div class="rh-row rh-empty">—</div>`;
+  $("run-history").querySelectorAll("button[data-seed]").forEach(b => b.onclick = () => {
+    $("collection").classList.add("hidden");
+    showDeckSelect(+b.dataset.seed);
+  });
   $("collection").classList.remove("hidden");
 }
 
 /* ---------- 结束 ---------- */
 function runStatsHTML() {
   const played = Object.entries(G.handPlayCounts).sort((a, b) => b[1] - a[1]);
-  let s = `<div class="end-stats">${S("rounds_word")} ${G.round}`;
+  const deck = DECKS.find(d => d.id === (G.deckId || "classic")) || DECKS[0];
+  let s = `<div class="end-stats">${deck.icon} ${L(deck.name)} · ${S("rounds_word")} ${G.round}`;
   if (played[0]) s += ` · ${S("fav_hand")}: ${L(HAND_TYPES[played[0][0]].name)} ×${played[0][1]}`;
   if (G.bestHand) s += `<br>${S("best_play")}: ${L(HAND_TYPES[G.bestHand.type].name)} ${fmt(G.bestHand.total)}`;
   s += `<br>${S("seed_word")}: ${G.seed}`;
@@ -808,17 +838,19 @@ function makeJokerEl(j, isShop = false) {
   const el = document.createElement("div");
   el.className = `joker ${def.rarity}`;
   el.dataset.jid = j.uid;
-  el.innerHTML = `<div class="j-icon">${def.icon}</div><div class="j-name">${L(def.name)}</div><div class="j-tag">${L(RARITY_NAME[def.rarity])}</div>`;
-  el.onmouseenter = e => showTooltip(e, def, isShop);
+  const edBadge = j.ed ? `<div class="ed-tag ed-${j.ed}">${L(EDITIONS[j.ed].name)}</div>` : "";
+  if (j.ed) el.classList.add("ed-" + j.ed);
+  el.innerHTML = `<div class="j-icon">${def.icon}</div><div class="j-name">${L(def.name)}</div><div class="j-tag">${L(RARITY_NAME[def.rarity])}</div>${edBadge}`;
+  el.onmouseenter = e => showTooltip(e, def, isShop, j.ed);
   el.onmousemove = e => moveTooltip(e);
   el.onmouseleave = () => { hideTooltip(); cancelSellConfirm(el); };
   // 触屏设备无 hover：点击商店小丑牌显示说明
-  if (isShop && NO_HOVER) el.onclick = e => showTooltip(e, def, true);
+  if (isShop && NO_HOVER) el.onclick = e => showTooltip(e, def, true, j.ed);
   if (!isShop) {
     // 双击确认出售（避免原生 confirm 阻塞动画）
     el.onclick = e => {
       if (el.classList.contains("confirm-sell")) { sellJoker(j); return; }
-      if (NO_HOVER) showTooltip(e, def, false);   // 触屏首次点击先看说明
+      if (NO_HOVER) showTooltip(e, def, false, j.ed);   // 触屏首次点击先看说明
       document.querySelectorAll(".joker.confirm-sell, .consumable.confirm-sell").forEach(cancelSellConfirm);
       el.classList.add("confirm-sell");
       const badge = document.createElement("div");
@@ -840,11 +872,12 @@ function makeJokerEl(j, isShop = false) {
   return el;
 }
 
-function showTooltip(e, def, isShop) {
+function showTooltip(e, def, isShop, ed) {
   const tt = $("tooltip");
+  const edLine = ed ? `<div class="tt-ed">✨ ${L(EDITIONS[ed].name)}: ${L(EDITIONS[ed].desc)}</div>` : "";
   tt.innerHTML = `<div class="tt-title">${def.icon} ${L(def.name)}</div>
     <div class="tt-rarity ${def.rarity}">${L(RARITY_NAME[def.rarity])}</div>
-    <div class="tt-desc">${L(def.desc)}</div>
+    <div class="tt-desc">${L(def.desc)}</div>${edLine}
     ${isShop ? "" : `<div class="tt-sell">${S("click_sell", sellValue(def))}</div>`}`;
   tt.classList.remove("hidden");
   moveTooltip(e);
@@ -974,10 +1007,32 @@ function bindConfirmButton(btn, labelKey, action) {
   };
 }
 
-function startFreshGame(seed) {
+function startFreshGame(seed, deckId) {
   localStorage.removeItem(SAVE_KEY);
   document.querySelectorAll(".overlay").forEach(o => o.classList.add("hidden"));
-  newGame(seed);
+  newGame(seed, deckId);
+  flashMessage(seed === todaySeed() ? S("daily_start", G.seed) : S("seed_start", G.seed));
+}
+
+/* 起始牌组选择（重新开局 / 今日挑战 / 自定义种子 / 复盘历史种子时弹出） */
+function showDeckSelect(seed) {
+  const box = $("deck-options");
+  box.innerHTML = "";
+  DECKS.forEach(d => {
+    const wrap = document.createElement("div");
+    wrap.className = "shop-item";
+    const cardEl = makeShopMiniCard("deck-card", d.icon, L(d.name), L(d.desc));
+    const btn = document.createElement("button");
+    btn.className = "btn btn-blue buy-btn";
+    btn.textContent = S("choose_btn");
+    btn.onclick = () => {
+      $("deck-select").classList.add("hidden");
+      startFreshGame(seed, d.id);
+    };
+    wrap.append(cardEl, btn);
+    box.appendChild(wrap);
+  });
+  $("deck-select").classList.remove("hidden");
 }
 
 $("play-btn").onclick = playHand;
@@ -987,19 +1042,16 @@ $("sort-suit").onclick = () => { sortHand("suit"); render(); };
 $("run-info-btn").onclick = showRunInfo;
 $("collection-btn").onclick = showCollection;
 $("close-collection-btn").onclick = () => $("collection").classList.add("hidden");
-bindConfirmButton($("new-run-btn"), "new_run_btn", () => startFreshGame());
-bindConfirmButton($("daily-btn"), "daily_btn", () => {
-  startFreshGame(todaySeed());
-  flashMessage(S("daily_start", G.seed));
-});
+bindConfirmButton($("new-run-btn"), "new_run_btn", () => showDeckSelect());
+bindConfirmButton($("daily-btn"), "daily_btn", () => showDeckSelect(todaySeed()));
 $("seed-line").onclick = () => {
   const v = typeof window.prompt === "function"
     ? window.prompt(S("seed_prompt"), "") : null;
   if (!v || !v.trim()) return;
   const t = v.trim();
-  startFreshGame(/^\d+$/.test(t) ? parseInt(t, 10) : hashStr(t));
-  flashMessage(S("seed_start", G.seed));
+  showDeckSelect(/^\d+$/.test(t) ? parseInt(t, 10) : hashStr(t));
 };
+$("deck-cancel-btn").onclick = () => $("deck-select").classList.add("hidden");
 $("lang-btn").textContent = LANG === "zh" ? "English" : "中文";
 $("lang-btn").onclick = () => {
   try { localStorage.setItem("joker_lang", LANG === "zh" ? "en" : "zh"); } catch (e) { /* 忽略 */ }
@@ -1019,6 +1071,10 @@ $("reroll-btn").onclick = () => {
   else if (G.money >= G.rerollCost) { G.money -= G.rerollCost; G.rerollCost += 1; }
   else return;
   AudioFX.discard();
+  for (const j of G.jokers) {
+    const def = JOKER_BY_ID.get(j.id);
+    if (def?.onReroll) def.onReroll(G, j);
+  }
   saveGame();
   rollShop(); renderShop(); render();
 };
@@ -1028,7 +1084,7 @@ $("next-round-btn").onclick = () => {
 };
 $("restart-btn").onclick = () => {
   $("end-screen").classList.add("hidden");
-  newGame();
+  showDeckSelect();
 };
 $("endless-btn").onclick = () => {
   G.endless = true;
@@ -1060,13 +1116,45 @@ document.addEventListener("pointerdown", e => {
   if (NO_HOVER && !e.target?.closest?.(".joker, .consumable")) hideTooltip();
 });
 
-/* 键盘操作：1-9 选牌 / Enter 出牌 / X 弃牌 / R 点数排序 / S 花色排序 / M 静音 */
+/* 键盘操作：
+   回合中   1-9 选牌 / Enter 出牌 / X 弃牌 / R/S 排序 / Esc 取消选择
+   盲注选择 Enter 选择 / X 跳过
+   商店     1-9 购买 / R 刷新 / Enter 下一回合
+   卡包     1-3 选取 / X 或 Esc 放弃
+   任意     M 静音 / Esc 关闭弹层 */
 document.addEventListener("keydown", e => {
   if (e.repeat) return;
   const k = e.key.toLowerCase();
   if (k === "m") {
     const muted = AudioFX.toggleMute();
     flashMessage(muted ? S("muted") : S("unmuted"));
+    return;
+  }
+  // 信息类弹层用 Esc 关闭
+  if (e.key === "Escape") {
+    ["run-info", "deck-view", "collection", "deck-select"].forEach(id => $(id).classList.add("hidden"));
+    if (G.pendingPack) { skipPack(); $("pack-open").classList.add("hidden"); saveGame(); }
+    else if (G.state === "playing" && !G.scoring && G.selected.size) { G.selected.clear(); render(); }
+    return;
+  }
+  // 卡包 3 选 1
+  if (G.pendingPack) {
+    if (/^[1-3]$/.test(k)) pickPack(+k - 1);
+    else if (k === "x") { skipPack(); $("pack-open").classList.add("hidden"); saveGame(); }
+    return;
+  }
+  if (G.state === "blind-select") {
+    if (e.key === "Enter") $("blind-options").querySelector?.("button[data-i]")?.click?.();
+    else if (k === "x") $("blind-options").querySelector?.("button[data-skip]")?.click?.();
+    return;
+  }
+  if (G.state === "shop") {
+    if (/^[1-9]$/.test(k)) {
+      const btns = document.querySelectorAll("#shop-items .buy-btn");
+      const b = btns[+k - 1];
+      if (b && !b.disabled) b.click?.();
+    } else if (k === "r" && !$("reroll-btn").disabled) $("reroll-btn").onclick();
+    else if (e.key === "Enter") $("next-round-btn").onclick();
     return;
   }
   if (G.state !== "playing" || G.scoring) return;

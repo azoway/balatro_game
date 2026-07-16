@@ -4,6 +4,27 @@
    ========================================================= */
 "use strict";
 
+/**
+ * 核心数据结构（供编辑器 IntelliSense 使用）
+ * @typedef {Object} Card
+ * @property {string} suit  花色 ♠♥♣♦
+ * @property {string} rank  点数 2-10/J/Q/K/A
+ * @property {string} id    整局稳定的唯一 id（m0-m51）
+ * @property {"bonus"|"mult"|"steel"|"gold"} [enh]  增强
+ * @property {boolean} [isNew]  本次新抽（发牌动画用）
+ *
+ * @typedef {Object} JokerInst
+ * @property {string} id    JOKER_DEFS 中的 id
+ * @property {string} uid   实例唯一 id（DOM 定位用）
+ * @property {number} [state]  成长类小丑的累计值
+ * @property {"foil"|"holo"|"poly"} [ed]  版本
+ *
+ * @typedef {Object} ScoreStep
+ * @property {"card"|"held"|"joker"} kind
+ * @property {number} chips  该步骤后的筹码
+ * @property {number} mult   该步骤后的倍率
+ */
+
 /* ---------- 可播种随机数 (mulberry32) ----------
    所有影响玩法的随机（洗牌 / Boss / 商店 / 小丑效果）走 rng()，
    纯视觉随机（彩带、倾斜）用 Math.random，不污染随机流。 */
@@ -50,6 +71,11 @@ function recordGameEnd(win) {
   if (win) s.wins = (s.wins || 0) + 1;
   s.bestAnte = Math.max(s.bestAnte || 0, G.endless ? G.ante : Math.min(G.ante, MAX_ANTE));
   if (G.bestHand) s.bestScore = Math.max(s.bestScore || 0, G.bestHand.total);
+  s.history = [{
+    d: new Date().toLocaleDateString("sv"),
+    seed: G.seed, ante: G.ante, win: !!win,
+    endless: !!G.endless, deck: G.deckId || "classic",
+  }, ...(s.history || [])].slice(0, 10);
   saveStats(s);
 }
 
@@ -63,7 +89,8 @@ function saveGame() {
       v: 4,
       money: G.money, ante: G.ante, round: G.round,
       blindIndex: G.blindIndex, bossId: G.boss?.id,
-      jokers: G.jokers.map(j => ({ id: j.id, uid: j.uid, state: j.state })),
+      jokers: G.jokers.map(j => ({ id: j.id, uid: j.uid, state: j.state, ed: j.ed })),
+      deckId: G.deckId,
       consumables: G.consumables.map(c => ({ id: c.id, uid: c.uid })),
       handLevels: G.handLevels, handPlayCounts: G.handPlayCounts,
       seed: G.seed, rngState: _rngState,
@@ -119,6 +146,7 @@ function loadGame() {
     G.maxConsumables = d.maxConsumables ?? 2;
     G.interestCap = d.interestCap ?? 5;
     G.pendingPack = d.pendingPack || null;
+    G.deckId = d.deckId || "classic";
     if (d.state === "playing" && d.mid && Array.isArray(d.mid.hand)) {
       Object.assign(G, {
         state: "playing",
@@ -165,13 +193,17 @@ function newGameState(seed) {
     handLevels: Object.fromEntries(Object.keys(HAND_TYPES).map(k => [k, 1])),
     handPlayCounts: {},
     shopStock: [], rerollCost: 5,
+    deckId: "classic",
     scoring: false, speed: 1,
     state: "blind-select",
   });
 }
 
-function newGame(seed) {
+function newGame(seed, deckId = "classic") {
   newGameState(seed);
+  const deck = DECKS.find(d => d.id === deckId) || DECKS[0];
+  G.deckId = deck.id;
+  deck.apply(G);
   pickBoss();
   showBlindSelect();
   render();
@@ -329,16 +361,24 @@ function computeScoring(cards, g = G) {
     steps.push({ kind: "joker", joker: j, effect: r, chips, mult });
   };
   for (const c of ev.scoringCards) {
-    const add = CHIP_VAL(c.rank) + (c.enh === "bonus" ? ENH_CHIPS : 0);
-    chips += add;
-    const enhMult = c.enh === "mult" ? ENH_MULT : 0;
-    if (enhMult) mult += enhMult;
-    steps.push({ kind: "card", card: c, add, enhMult, chips, mult });
+    // 重触发：每张牌的触发次数 = 1 + 各小丑的额外触发
+    let triggers = 1;
     for (const j of g.jokers) {
       const def = JOKER_BY_ID.get(j.id);
-      if (!def?.perCard) continue;
-      const r = def.perCard(c, ctx, g, j);
-      if (r) applyEffect(j, r);
+      if (def?.retrigger) triggers += def.retrigger(c, ctx, g, j) || 0;
+    }
+    for (let t = 0; t < triggers; t++) {
+      const add = CHIP_VAL(c.rank) + (c.enh === "bonus" ? ENH_CHIPS : 0);
+      chips += add;
+      const enhMult = c.enh === "mult" ? ENH_MULT : 0;
+      if (enhMult) mult += enhMult;
+      steps.push({ kind: "card", card: c, add, enhMult, chips, mult, again: t > 0 });
+      for (const j of g.jokers) {
+        const def = JOKER_BY_ID.get(j.id);
+        if (!def?.perCard) continue;
+        const r = def.perCard(c, ctx, g, j);
+        if (r) applyEffect(j, r);
+      }
     }
   }
   // 手中钢铁牌（未打出、留在手里的）
@@ -347,6 +387,9 @@ function computeScoring(cards, g = G) {
     steps.push({ kind: "held", card: hc, xmult: ENH_STEEL_X, chips, mult });
   }
   for (const j of g.jokers) {
+    // 版本效果先于该小丑自身效果（排序影响 ×倍率收益）
+    const ed = j.ed && EDITIONS[j.ed];
+    if (ed) applyEffect(j, ed.effect);
     const def = JOKER_BY_ID.get(j.id);
     if (!def?.after) continue;
     const r = def.after(ctx, g, j);
@@ -356,6 +399,12 @@ function computeScoring(cards, g = G) {
 }
 
 /* ---------- 商店库存 ---------- */
+/* 小丑版本掉落: 3% 多彩 / 7% 全息 / 10% 闪箔 */
+function rollEdition() {
+  const r = rng();
+  return r < 0.03 ? "poly" : r < 0.10 ? "holo" : r < 0.20 ? "foil" : null;
+}
+
 function rollShop() {
   G.shopStock = [];
   const owned = new Set(G.jokers.map(j => j.id));
@@ -367,7 +416,7 @@ function rollShop() {
     pool.forEach(d => { for (let w = 0; w < weights[d.rarity]; w++) bag.push(d); });
     const pick = rnd(bag);
     pool.splice(pool.indexOf(pick), 1);
-    G.shopStock.push({ kind: "joker", def: pick, sold: false });
+    G.shopStock.push({ kind: "joker", def: pick, ed: rollEdition(), sold: false });
   }
   G.shopStock.push({ kind: "planet", def: rnd(PLANETS), sold: false });
   G.shopStock.push({ kind: "tarot", def: rnd(TAROTS), sold: false });

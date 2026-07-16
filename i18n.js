@@ -37,8 +37,8 @@ const STR = {
   daily_btn:         { zh: "今日挑战", en: "Daily Run" },
   collection_btn:    { zh: "图鉴", en: "Collection" },
   confirm_abandon:   { zh: "确认放弃本局?", en: "Abandon this run?" },
-  hotkeys:           { zh: "快捷键: 1-9选牌 · Enter出牌 · X弃牌 · R/S排序 · M静音 · 计分中点击加速",
-                       en: "Hotkeys: 1-9 select · Enter play · X discard · R/S sort · M mute · click to speed up scoring" },
+  hotkeys:           { zh: "快捷键: 1-9选牌/购买 · Enter出牌/确认 · X弃牌/跳过 · R/S排序 · Esc取消 · M静音 · 计分中点击加速",
+                       en: "Hotkeys: 1-9 select/buy · Enter play/confirm · X discard/skip · R/S sort · Esc cancel · M mute · click to speed up scoring" },
   sort_label:        { zh: "排序", en: "Sort" },
   sort_rank_btn:     { zh: "点数", en: "Rank" },
   sort_suit_btn:     { zh: "花色", en: "Suit" },
@@ -100,6 +100,17 @@ const STR = {
   msg_hands_up:      { zh: "出牌上限 {0}", en: "Hand limit {0}" },
   msg_handsize_up:   { zh: "手牌上限 {0}", en: "Hand size {0}" },
   msg_free_reroll:   { zh: "下次商店可免费刷新 1 次", en: "Next shop reroll is free" },
+
+  /* 计分特效 */
+  again_word:        { zh: "↻ 再次触发!", en: "↻ Again!" },
+
+  /* 牌组选择 */
+  deck_select_title: { zh: "选择起始牌组", en: "Choose your Deck" },
+  cancel_btn:        { zh: "取消", en: "Cancel" },
+
+  /* 对局历史 */
+  history_title:     { zh: "最近对局", en: "Recent Runs" },
+  replay_tip:        { zh: "用该种子重开一局", en: "Replay this seed" },
 
   /* 卡包 */
   pick_one:          { zh: "3 选 1", en: "Pick 1 of 3" },
