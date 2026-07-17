@@ -95,6 +95,7 @@ function startBlind(idx) {
   } else AudioFX.play();
   G.handsLeft = G.maxHands;
   G.discardsLeft = G.maxDiscards;
+  G.roundDiscards = 0;
   G.curHandSize = handSize;
   buildDeck();
   G.hand = [];
@@ -349,6 +350,7 @@ function discard() {
   const cards = selectedCards();
   if (!cards.length || !G.discardsLeft || G.scoring || G.state !== "playing") return;
   G.discardsLeft--;
+  G.roundDiscards = (G.roundDiscards || 0) + 1;
   AudioFX.discard();
   for (const j of G.jokers) {
     const def = JOKER_BY_ID.get(j.id);
@@ -385,6 +387,7 @@ function confetti(count = 80) {
 /* ---------- 回合胜利 / 商店 ---------- */
 async function winRound() {
   G.state = "roundwon";
+  if (G.blindIndex === 2 && !(G.roundDiscards > 0)) awardAchievement("iron_hand");
   AudioFX.win();
   confetti(G.blindIndex === 2 ? 140 : 70);
   render();
@@ -628,6 +631,8 @@ function sellJoker(j) {
   const v = sellValue(def);
   G.jokers = G.jokers.filter(x => x !== j);
   G.money += v;
+  G.soldCount = (G.soldCount || 0) + 1;
+  if (G.soldCount >= 5) awardAchievement("merchant");
   AudioFX.money();
   flashMessage(S("sold_flash", L(def.name), v));
   hideTooltip();
@@ -743,9 +748,16 @@ function showCollection() {
   $("collection-stats").textContent = S("stats_line",
     s.games || 0, s.wins || 0, s.bestAnte || 0, fmt(s.bestScore || 0), seen.size, JOKER_DEFS.length)
     + (modeBests ? ` · ${modeBests}` : "");
-  $("collection-grid").innerHTML = JOKER_DEFS.map(d => seen.has(d.id)
+  const clItem = (d, isSeen) => isSeen
     ? `<div class="cl-item" title="${L(d.desc)}"><div class="cl-icon">${d.icon}</div><div class="cl-name">${L(d.name)}</div></div>`
-    : `<div class="cl-item cl-unknown"><div class="cl-icon">❓</div><div class="cl-name">???</div></div>`).join("");
+    : `<div class="cl-item cl-unknown"><div class="cl-icon">❓</div><div class="cl-name">???</div></div>`;
+  $("collection-grid").innerHTML = JOKER_DEFS.map(d => clItem(d, seen.has(d.id))).join("");
+  // 塔罗+幻灵 / 优惠券分区（商店出现过即收录）
+  const seenC = new Set(s.seenConsumables || []);
+  G.consumables.forEach(x => seenC.add(x.id));
+  $("consumables-col-grid").innerHTML = [...TAROTS, ...SPECTRALS].map(d => clItem(d, seenC.has(d.id))).join("");
+  const seenV = new Set([...(s.seenVouchers || []), ...G.vouchers]);
+  $("vouchers-col-grid").innerHTML = VOUCHERS.map(d => clItem(d, seenV.has(d.id))).join("");
   const unlocked = new Set(s.achievements || []);
   $("achievements-grid").innerHTML = ACHIEVEMENTS.map(a => `
     <div class="cl-item ${unlocked.has(a.id) ? "ach-on" : "cl-unknown"}" title="${L(a.desc)}">
@@ -837,6 +849,7 @@ function gameOver(win) {
     : `${S("fell_at")} ${G.endless ? S("endless_word") + " · " : ""}${S("ante_word")} ${G.ante} · ${G.blindIndex === 2 ? L(G.boss.name) : L(BLIND_META[G.blindIndex].name)}<br>${S("short_by", fmt(Math.max(0, G.target - G.roundScore)))}`)
     + runStatsHTML();
   $("endless-btn").classList.toggle("hidden", !win);
+  $("restore-parked-btn").classList.toggle("hidden", !hasParkedSave());
   $("end-screen").classList.remove("hidden");
 }
 

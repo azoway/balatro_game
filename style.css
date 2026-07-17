@@ -1396,3 +1396,9 @@ body::after {
 .mode-chip small { font-size: 10px; font-weight: 400; color: rgba(255,255,255,.6); }
 .mode-chip:hover { border-color: rgba(255,255,255,.5); }
 .mode-chip.mode-on { border-color: #f7d774; background: rgba(120,90,10,.35); }
+
+/* ===== 图鉴分区(塔罗/幻灵/优惠券)缩小一号 ===== */
+.cl-sub { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 660px; margin: 4px auto; }
+.cl-sub .cl-item { width: 72px; padding: 6px 3px; }
+.cl-sub .cl-icon { font-size: 20px; }
+.cl-sub .cl-name { font-size: 9px; }

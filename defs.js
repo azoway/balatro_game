@@ -696,6 +696,21 @@ const ACHIEVEMENTS = [
   { id: "legendary", icon: "🎪",
     name: { zh: "传奇之主", en: "Legend Holder" },
     desc: { zh: "拥有一张传奇小丑牌", en: "Own a Legendary Joker" } },
+  { id: "quick_win", icon: "⚡",
+    name: { zh: "闪电战", en: "Blitz" },
+    desc: { zh: "通关快速模式", en: "Win a Quick run" } },
+  { id: "rush_win", icon: "👹",
+    name: { zh: "屠魔者", en: "Boss Slayer" },
+    desc: { zh: "通关 Boss Rush 模式", en: "Win a Boss Rush run" } },
+  { id: "challenger", icon: "📅",
+    name: { zh: "挑战者", en: "Challenger" },
+    desc: { zh: "完成过今日挑战和每周挑战各一次", en: "Play both a Daily and a Weekly run" } },
+  { id: "merchant", icon: "💱",
+    name: { zh: "倒爷", en: "Wheeler Dealer" },
+    desc: { zh: "单局卖出 5 张小丑牌", en: "Sell 5 Jokers in one run" } },
+  { id: "iron_hand", icon: "🤜",
+    name: { zh: "铁手", en: "Iron Hand" },
+    desc: { zh: "不使用弃牌击败一个 Boss 盲注", en: "Beat a Boss Blind without discarding" } },
 ];
 
 /* ---------- 帮助页 ---------- */

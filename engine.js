@@ -69,12 +69,17 @@ function loadStats() {
 function saveStats(s) {
   try { localStorage.setItem(STATS_KEY, JSON.stringify(s)); } catch (e) { /* 忽略 */ }
 }
-function markJokersSeen(ids) {
+/* 图鉴收录：seenJokers / seenConsumables(塔罗+幻灵) / seenVouchers */
+function markSeen(field, ids) {
   if (!ids.length) return;
   const s = loadStats();
-  s.seenJokers = [...new Set([...(s.seenJokers || []), ...ids])];
+  s[field] = [...new Set([...(s[field] || []), ...ids])];
   saveStats(s);
-  if (s.seenJokers.length >= JOKER_DEFS.length) awardAchievement("collector");
+  return s[field];
+}
+function markJokersSeen(ids) {
+  const seen = markSeen("seenJokers", ids);
+  if (seen && seen.length >= JOKER_DEFS.length) awardAchievement("collector");
 }
 function recordGameEnd(win) {
   const s = loadStats();
@@ -93,13 +98,19 @@ function recordGameEnd(win) {
     seed: G.seed, ante: G.ante, win: !!win,
     endless: !!G.endless, deck: G.deckId || "classic", mode: G.mode || "normal",
   }, ...(s.history || [])].slice(0, 10);
+  if (G.seed === todaySeed()) s.didDaily = true;
+  if (G.seed === weekSeed()) s.didWeekly = true;
   saveStats(s);
-  // 通关/无尽成就只在标准与 Boss Rush 模式解锁（快速模式目标更低）
+  // 成就颁发放在 saveStats 之后（awardAchievement 内部自行读写 stats，避免快照互相覆盖）
   if (win && G.mode !== "quick") {
+    // 通关/无尽成就只在标准与 Boss Rush 模式解锁（快速模式目标更低）
     awardAchievement("first_win");
     if (DECKS.every(d => s.deckWins[d.id])) awardAchievement("all_decks");
   }
+  if (win && G.mode === "quick") awardAchievement("quick_win");
+  if (win && G.mode === "boss_rush") awardAchievement("rush_win");
   if (G.ante >= 12 && G.mode !== "quick") awardAchievement("endless12");
+  if (s.didDaily && s.didWeekly) awardAchievement("challenger");
 }
 
 /* ---------- 成就 ---------- */
@@ -118,6 +129,30 @@ function awardAchievement(id) {
 
 /* ---------- 存档 ---------- */
 const SAVE_KEY = "joker_save_v1";
+const PARK_KEY = "joker_save_parked";
+
+/* 开新局/挑战时搁置进行中的存档，结束后可一键恢复（单个搁置位，后开的覆盖先开的） */
+function parkCurrentSave() {
+  try {
+    const cur = localStorage.getItem(SAVE_KEY);
+    if (!cur) return false;
+    localStorage.setItem(PARK_KEY, cur);
+    localStorage.removeItem(SAVE_KEY);
+    return true;
+  } catch (e) { return false; }
+}
+function hasParkedSave() {
+  try { return !!localStorage.getItem(PARK_KEY); } catch (e) { return false; }
+}
+function restoreParkedSave() {
+  try {
+    const p = localStorage.getItem(PARK_KEY);
+    if (!p) return false;
+    localStorage.setItem(SAVE_KEY, p);
+    localStorage.removeItem(PARK_KEY);
+    return loadGame();
+  } catch (e) { return false; }
+}
 
 function saveGame() {
   if (G.state === "over") { localStorage.removeItem(SAVE_KEY); return; }
@@ -142,6 +177,7 @@ function saveGame() {
       maxConsumables: G.maxConsumables, interestCap: G.interestCap,
       pendingPack: G.pendingPack,
       voucherDiscount: G.voucherDiscount, investment: G.investment, doubleTag: G.doubleTag,
+      soldCount: G.soldCount,
       state: G.state === "playing" ? "playing" : "other",
     };
     // 回合中存档：刷新后可从当前手牌继续
@@ -149,6 +185,7 @@ function saveGame() {
       data.mid = {
         deck: G.deck, hand: G.hand,
         handsLeft: G.handsLeft, discardsLeft: G.discardsLeft,
+        roundDiscards: G.roundDiscards || 0,
         roundScore: G.roundScore, target: G.target,
         curHandSize: G.curHandSize, maxHands: G.maxHands, maxDiscards: G.maxDiscards,
         sortMode: G.sortMode || "rank",
@@ -192,11 +229,13 @@ function loadGame() {
     G.voucherDiscount = !!d.voucherDiscount;
     G.investment = d.investment || 0;
     G.doubleTag = d.doubleTag || 0;
+    G.soldCount = d.soldCount || 0;
     if (d.state === "playing" && d.mid && Array.isArray(d.mid.hand)) {
       Object.assign(G, {
         state: "playing",
         deck: d.mid.deck || [], hand: d.mid.hand,
         handsLeft: d.mid.handsLeft, discardsLeft: d.mid.discardsLeft,
+        roundDiscards: d.mid.roundDiscards ?? 1,   // 旧档未知时按已弃牌处理，避免误发铁手成就
         roundScore: d.mid.roundScore || 0, target: d.mid.target,
         curHandSize: d.mid.curHandSize || G.handSize,
         maxHands: d.mid.maxHands ?? 4, maxDiscards: d.mid.maxDiscards ?? 3,
@@ -234,6 +273,7 @@ function newGameState(seed) {
     interestCap: BALANCE.interestCap, vouchers: [], pendingPack: null,
     disabledJokerUid: null,                       // 猩红之心禁用的小丑
     voucherDiscount: false, investment: 0, doubleTag: 0,   // 标签效果
+    soldCount: 0, roundDiscards: 0,               // 成就埋点：单局卖卡数 / 本回合弃牌数
     roundScore: 0, target: 0,
     blindIndex: 0,           // 0 小盲 1 大盲 2 Boss
     boss: null, currentBoss: null,
@@ -532,6 +572,8 @@ function rollShop() {
   const vLeft = VOUCHERS.filter(v => !G.vouchers.includes(v.id));
   if (vLeft.length) G.shopStock.push({ kind: "voucher", def: rnd(vLeft), sold: false });
   markJokersSeen(G.shopStock.filter(i => i.kind === "joker").map(i => i.def.id));
+  markSeen("seenConsumables", G.shopStock.filter(i => i.kind === "tarot" || i.kind === "spectral").map(i => i.def.id));
+  markSeen("seenVouchers", G.shopStock.filter(i => i.kind === "voucher").map(i => i.def.id));
 }
 
 /* ---------- 卡包 ---------- */
@@ -548,6 +590,7 @@ function openPack(kind) {
   }
   G.pendingPack = { kind, choices };
   if (kind === "buffoon") markJokersSeen(choices);
+  if (kind === "arcana") markSeen("seenConsumables", choices);
 }
 
 /* 返回 true=成功；"full"=槽位已满；false=无效 */

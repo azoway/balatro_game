@@ -25,14 +25,17 @@ const AudioFX = (() => {
       o.start(c.currentTime + when); o.stop(c.currentTime + when + dur);
     } catch (e) { /* 忽略 */ }
   }
-  /* 生成式 BGM：小调琶音 + 低音垫，节奏随底注加快；无音频文件，静音键统一控制 */
+  /* 生成式 BGM：小调琶音 + 低音垫，节奏随底注加快；无音频文件。
+     M 键静音是总开关；🎵 按钮可单独关 BGM 保留音效。 */
   let musicTimer = null, mStep = 0;
+  let musicOff = false;
+  try { musicOff = localStorage.getItem("joker_music") === "0"; } catch (e) { /* 忽略 */ }
   const CHORDS = [[0, 3, 7], [-4, 0, 3], [3, 7, 10], [-2, 2, 5]];   // Am F C G
   function startMusic() {
     if (musicTimer) return;
     const tick = () => {
       const ante = (typeof G !== "undefined" && G.ante) || 1;
-      if (!muted && !(typeof document !== "undefined" && document.hidden)) {
+      if (!muted && !musicOff && !(typeof document !== "undefined" && document.hidden)) {
         const chord = CHORDS[Math.floor(mStep / 8) % CHORDS.length];
         const deg = chord[Math.floor(Math.random() * chord.length)] + (Math.random() < .3 ? 12 : 0);
         tone(220 * Math.pow(2, deg / 12), .38, "sine", .035);
@@ -46,6 +49,12 @@ const AudioFX = (() => {
 
   return {
     startMusic,
+    musicEnabled: () => !musicOff,
+    toggleMusic: () => {
+      musicOff = !musicOff;
+      try { localStorage.setItem("joker_music", musicOff ? "0" : "1"); } catch (e) { /* 忽略 */ }
+      return !musicOff;
+    },
     toggleMute: () => {
       muted = !muted;
       try { localStorage.setItem("joker_muted", muted ? "1" : "0"); } catch (e) { /* 忽略 */ }

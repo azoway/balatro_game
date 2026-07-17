@@ -27,7 +27,7 @@ function bindConfirmButton(btn, labelKey, action) {
 }
 
 function startFreshGame(seed, deckId, mode) {
-  localStorage.removeItem(SAVE_KEY);
+  if (parkCurrentSave()) flashMessage(S("run_parked"));   // 进行中的对局搁置而非删除
   document.querySelectorAll(".overlay").forEach(o => o.classList.add("hidden"));
   newGame(seed, deckId, mode);
   flashMessage(seed === todaySeed() ? S("daily_start", G.seed)
@@ -124,6 +124,15 @@ $("seed-line").onclick = () => {
   showDeckSelect(/^\d+$/.test(t) ? parseInt(t, 10) : hashStr(t));
 };
 $("deck-cancel-btn").onclick = () => $("deck-select").classList.add("hidden");
+/* BGM 独立开关（M 键静音仍是总开关） */
+const musicBtnText = () => S(AudioFX.musicEnabled() ? "music_btn_on" : "music_btn_off");
+$("music-btn").textContent = musicBtnText();
+$("music-btn").onclick = () => {
+  AudioFX.toggleMusic();
+  AudioFX.startMusic();
+  $("music-btn").textContent = musicBtnText();
+};
+
 $("lang-btn").textContent = LANG === "zh" ? "English" : "中文";
 $("lang-btn").onclick = () => {
   try { localStorage.setItem("joker_lang", LANG === "zh" ? "en" : "zh"); } catch (e) { /* 忽略 */ }
@@ -157,6 +166,10 @@ $("next-round-btn").onclick = () => {
 $("restart-btn").onclick = () => {
   $("end-screen").classList.add("hidden");
   showDeckSelect();
+};
+$("restore-parked-btn").onclick = () => {
+  $("end-screen").classList.add("hidden");
+  if (!restoreParkedSave()) newGame();
 };
 $("endless-btn").onclick = () => {
   G.endless = true;

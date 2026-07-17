@@ -1,6 +1,6 @@
 /* 小丑牌 · JOKER — Service Worker
    网络优先、缓存兜底：在线时始终拿最新版本，离线时用缓存照常游玩。 */
-const CACHE = "joker-v10";
+const CACHE = "joker-v11";
 const ASSETS = [
   "./", "./index.html", "./style.css",
   "./i18n.js", "./defs.js", "./engine.js", "./audio.js", "./ui.js", "./main.js",

@@ -401,7 +401,7 @@ assert(api.fmt(Infinity) === "∞", "fmt 无穷");
 
 /* ---------- 成就 ---------- */
 localStorage.removeItem("joker_stats_v1");
-assert(api.ACHIEVEMENTS.length === 8, "8 个成就");
+assert(api.ACHIEVEMENTS.length === 13, "13 个成就");
 assert(api.awardAchievement("big_hand") === true, "首次解锁成就");
 assert(api.awardAchievement("big_hand") === false, "重复解锁被拒");
 assert(loadStats().achievements.includes("big_hand"), "成就持久化");
@@ -422,8 +422,40 @@ assert(loadStats().achievements.includes("legendary"), "传奇小丑成就");
 G.jokers = [];
 markJokersSeen(JOKER_DEFS.map(d => d.id));
 assert(loadStats().achievements.includes("collector"), "图鉴集齐成就");
+// 模式与挑战成就
+newGameState(43);
+G.mode = "quick"; G.ante = 5;
+recordGameEnd(true);
+assert(loadStats().achievements.includes("quick_win"), "快速通关成就");
+G.mode = "boss_rush"; G.ante = 9;
+recordGameEnd(true);
+assert(loadStats().achievements.includes("rush_win"), "BossRush 通关成就");
+G.mode = "normal";
+G.seed = api.todaySeed(); recordGameEnd(false);
+assert(!loadStats().achievements.includes("challenger"), "只玩每日不解锁挑战者");
+G.seed = api.weekSeed(); recordGameEnd(false);
+assert(loadStats().achievements.includes("challenger"), "每日+每周解锁挑战者");
+// 图鉴分区收录
+api.markSeen("seenConsumables", ["aura", "hermit"]);
+api.markSeen("seenVouchers", ["crate"]);
+const colStats = loadStats();
+assert(colStats.seenConsumables.length === 2 && colStats.seenVouchers.length === 1, "塔罗/优惠券收录");
 localStorage.removeItem("joker_stats_v1");
 localStorage.removeItem("joker_save_v1");
+
+/* ---------- 存档搁置 / 恢复 ---------- */
+newGameState(45);
+G.state = "blind-select"; G.money = 33;
+saveGame();
+assert(api.parkCurrentSave() === true, "搁置成功");
+assert(localStorage.getItem("joker_save_v1") === null && api.hasParkedSave(), "搁置后主存档清空");
+newGameState(46);
+G.money = 1;
+assert(api.restoreParkedSave() === true, "恢复搁置成功");
+assert(G.money === 33 && !api.hasParkedSave(), "恢复后金钱与搁置位状态正确");
+localStorage.removeItem("joker_save_v1");
+assert(api.parkCurrentSave() === false, "无进行局时搁置返回 false");
+localStorage.removeItem("joker_save_parked");
 
 /* ---------- 持久化牌库 + 塔罗改牌 ---------- */
 newGameState(13);

@@ -50,7 +50,7 @@ function compileGame() {
     rollShop, rollEdition, buyItem, computeScoring, newGameState, newGame, skipBlind, blindTarget,
     seedRNG, rng, buildDeck, TAROTS, TAROT_BY_ID, BOSSES, PACKS, VOUCHERS, EDITIONS, DECKS, PLANETS,
     SPECTRALS, SPECTRAL_BY_ID, SKIP_TAGS, HELP_PAGES, consumableDef, sellJoker, shareLink,
-    ACHIEVEMENTS, awardAchievement, fmt, BALANCE, MODES, weekSeed, todaySeed, runMaxAnte, blindReward,
+    ACHIEVEMENTS, awardAchievement, fmt, BALANCE, MODES, weekSeed, todaySeed, runMaxAnte, blindReward, markSeen, parkCurrentSave, hasParkedSave, restoreParkedSave,
     saveGame, loadGame, useConsumable, applyCardMod, pickBoss, openPack, choosePackOption, skipPack,
     loadStats, recordGameEnd, markJokersSeen, RANK_VAL, HAND_TYPES, ANTE_BASE,
     ENH_CHIPS, ENH_MULT, ENH_STEEL_X, S, L };`;
