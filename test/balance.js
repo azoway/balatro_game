@@ -41,7 +41,7 @@ if (MODE === "--worker" || args.includes("--worker")) {
     for (const job of jobs) {
       if (job.ante) api.ANTE_BASE.splice(0, api.ANTE_BASE.length, ...job.ante);
       bots[job.bot] ||= makeBot(api, job.bot);
-      const r = await bots[job.bot].simulate(job.seed, job.deck, { grantJoker: job.grantJoker });
+      const r = await bots[job.bot].simulate(job.seed, job.deck, { grantJoker: job.grantJoker, mode: job.mode });
       out.push({ ...job, ...r, handTypes: r.handTypes, jokersOwned: r.jokers });
     }
     process.stdout.write(JSON.stringify(out));
@@ -79,6 +79,7 @@ function runTasks(tasks) {
 const seeds = n => Array.from({ length: n }, (_, i) => SEED0 + i * SEEDSTEP);
 const mkTasks = (n, over = {}) => seeds(n).map(seed => ({
   seed, deck: opt("deck", "classic"), bot: opt("bot", "standard"),
+  mode: opt("mode", "normal"),
   ante: opt("ante", null)?.split(",").map(Number) || null, ...over,
 }));
 

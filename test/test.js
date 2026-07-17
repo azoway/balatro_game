@@ -327,6 +327,26 @@ assert(G.doubleTag === 1, "加倍标签生效");
 /* ---------- 帮助页 ---------- */
 assert(api.HELP_PAGES.length === 4 && api.HELP_PAGES.every(p => p.title.zh && p.title.en && p.body.zh && p.body.en), "帮助页 4 页双语齐全");
 
+/* ---------- i18n 键覆盖：源码/HTML 引用的每个键都必须在字典中 ---------- */
+{
+  const dictSrc = fs.readFileSync(path.join(ROOT, "i18n.js"), "utf8");
+  const dictKeys = new Set([...dictSrc.matchAll(/^  (\w+): *\{ *zh:/gm)].map(x => x[1]));
+  const used = new Set();
+  for (const f of ["defs.js", "engine.js", "audio.js", "ui.js", "main.js"]) {
+    const src = fs.readFileSync(path.join(ROOT, f), "utf8");
+    [...src.matchAll(/\bS\("([\w]+)"/g)].forEach(x => used.add(x[1]));
+  }
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  [...html.matchAll(/data-i18n="([\w]+)"/g)].forEach(x => used.add(x[1]));
+  const missing = [...used].filter(k => !dictKeys.has(k));
+  assert(missing.length === 0, "i18n 缺失键: " + missing.join(", "));
+  assert(used.size > 60, "i18n 扫描到足够多的键引用: " + used.size);
+  // 双语完整性：每个字典键都要有 zh 和 en（条目可能跨行）
+  const zhOnly = [...dictSrc.matchAll(/^  (\w+): *\{([\s\S]*?)\},$/gm)]
+    .filter(m => !/\ben:/.test(m[2])).map(m => m[1]);
+  assert(zhOnly.length === 0, "缺英文翻译的键: " + zhOnly.join(", "));
+}
+
 /* ---------- 游戏模式 ---------- */
 assert(api.MODES.length === 3, "3 种模式");
 // 快速模式: 4 底注 + 抽稀曲线
@@ -334,11 +354,16 @@ newGame(1, "classic", "quick");
 assert(G.mode === "quick" && api.runMaxAnte() === 4, "快速模式 4 底注");
 assert(blindTarget(0) === 100, "快速底注1 = 100");
 G.ante = 2;
-assert(blindTarget(0) === 800, "快速底注2 = 800 (标准的第3级)");
+assert(blindTarget(0) === api.BALANCE.quickAnte[1], "快速底注2用专用曲线");
 G.ante = 4;
-assert(blindTarget(0) === 14000, "快速底注4 = 14000 (标准的第7级)");
+assert(blindTarget(0) === api.BALANCE.quickAnte[3], "快速底注4用专用曲线");
 G.ante = 5;
-assert(blindTarget(0) === 35000, "快速无尽: 14000×2.5");
+assert(blindTarget(0) === Math.floor(api.BALANCE.quickAnte[3] * api.BALANCE.endlessGrowth), "快速无尽按增速续走");
+// Boss Rush 奖励补偿
+newGame(2, "classic", "boss_rush");
+assert(api.blindReward(0) === api.BALANCE.blindRewards[0] + 1, "BossRush 盲注奖励 +$1");
+G.mode = "normal";
+assert(api.blindReward(0) === api.BALANCE.blindRewards[0], "标准模式奖励不变");
 // Boss Rush: 小盲/大盲也有 Boss,且每个盲注换 Boss
 newGame(2, "classic", "boss_rush");
 const rushBosses = [];

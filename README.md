@@ -4,6 +4,8 @@ Balatro 风格的纯前端网页卡牌游戏，无任何依赖，打开 `index.h
 
 **在线试玩 / Play online:** https://azoway.github.io/balatro_game/
 
+![对局截图 / Gameplay](screenshot.png)
+
 > **English**: A Balatro-style roguelike deckbuilder in pure vanilla JS — zero dependencies, zero build step, just open `index.html`. Full English UI (toggle in the sidebar). Features: 12 poker hands incl. hidden ones, 50 Jokers across 6 mechanic classes (retriggers, scaling, held-in-hand, rule-benders, Blueprint copying, card growth), editions, tarot/spectral consumables that permanently sculpt your deck, booster packs, vouchers, 14 boss blinds, 5 starting decks, endless mode, daily runs, seeded share links (`?seed=…&deck=…`), achievements, collection & run history, offline PWA. Dev: `node test/test.js` (245 assertions incl. bot-driven full-run sims), `node test/balance.js` (win-rate / death-ante reports), `python3 test/e2e.py` (browser E2E).
 
 ## 玩法
@@ -51,9 +53,11 @@ Balatro 风格的纯前端网页卡牌游戏，无任何依赖，打开 `index.h
 index.html    页面骨架
 style.css     样式（含竖屏手机适配）
 i18n.js       国际化（zh/en 字典、L/S 工具）
-defs.js       数据定义（牌型 / Boss / 小丑 / 星球 / 塔罗 / 卡包 / 优惠券 / 版本 / 牌组 / 标签）
+defs.js       数据定义（牌型 / Boss / 小丑 / 星球 / 塔罗 / 卡包 / 优惠券 / 版本 / 牌组 / 模式 / 标签）
 engine.js     引擎（RNG / 状态 / 存档 / 牌型判定 / 纯函数计分 / 卡包 / 跨局统计）
-ui.js         渲染 / 动画 / 音效 / 流程 / 事件绑定
+audio.js      音效与生成式 BGM (WebAudio)
+ui.js         渲染 / 动画 / 流程
+main.js       事件绑定 / 键盘 / PWA 注册 / 启动（必须最后加载）
 sw.js         Service Worker（网络优先、缓存兜底）
 manifest.json PWA 清单
 jsconfig.json 编辑器智能提示配置（配合 engine.js 中的 JSDoc typedef）
@@ -67,6 +71,7 @@ python3 test/e2e.py                # 浏览器 E2E（需 playwright + chromium-h
 
 # 平衡实验 CLI（多进程分片，500 局约 40 秒）
 node test/balance.js report --runs=500            # 胜率(Wilson区间)/死亡分布/分Boss击杀率/分差/经济
+node test/balance.js report --mode=boss_rush      # 按模式仿真（quick / boss_rush）
 node test/balance.js tiers --runs=300             # 三档机器人(novice/standard/expert)难度带校验
 node test/balance.js compare --ante-b=100,300,... # 同种子配对 A/B 对比候选目标曲线
 node test/balance.js jokers --runs=40             # 单卡受控实验：逐小丑测边际底注增益

@@ -39,6 +39,7 @@ const STR = {
   week_suffix:       { zh: " · 每周挑战", en: " · Weekly" },
   weekly_start:      { zh: "📅 每周挑战 · 种子 {0}", en: "📅 Weekly Run · Seed {0}" },
   bossrush_hint:     { zh: "👹 随机 Boss 减益", en: "👹 Random Boss debuff" },
+  update_ready:      { zh: "🔄 新版本已就绪，点击此处刷新", en: "🔄 New version ready — tap to refresh" },
   collection_btn:    { zh: "图鉴", en: "Collection" },
   confirm_abandon:   { zh: "确认放弃本局?", en: "Abandon this run?" },
   hotkeys:           { zh: "快捷键: 1-9选牌/购买 · Enter出牌/确认 · X弃牌/跳过 · R/S排序 · Esc取消 · M静音 · 计分中点击加速",

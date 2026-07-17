@@ -1,5 +1,5 @@
 /* =========================================================
-   小丑牌 · JOKER — UI（渲染 / 动画 / 音效 / 流程 / 事件绑定）
+   小丑牌 · JOKER — UI（渲染 / 动画 / 流程（音效见 audio.js，事件绑定与启动见 main.js））
    所有面向玩家的文案经 i18n.js 的 L() / S() 取当前语言。
    ========================================================= */
 "use strict";
@@ -22,67 +22,6 @@ const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia
 const NO_HOVER = typeof window !== "undefined" && window.matchMedia
   ? window.matchMedia("(hover: none)").matches : false;
 
-/* ---------- 音效 (WebAudio) ---------- */
-const AudioFX = (() => {
-  let ctx = null;
-  let muted = false;
-  try { muted = localStorage.getItem("joker_muted") === "1"; } catch (e) { /* 忽略 */ }
-  const ac = () => {
-    ctx ||= new (window.AudioContext || window.webkitAudioContext)();
-    if (ctx.state === "suspended") ctx.resume();   // 浏览器自动播放策略
-    return ctx;
-  };
-  function tone(freq, dur, type = "sine", vol = .18, when = 0) {
-    if (muted) return;
-    try {
-      const c = ac(), o = c.createOscillator(), g = c.createGain();
-      o.type = type; o.frequency.value = freq;
-      g.gain.setValueAtTime(vol, c.currentTime + when);
-      g.gain.exponentialRampToValueAtTime(.001, c.currentTime + when + dur);
-      o.connect(g).connect(c.destination);
-      o.start(c.currentTime + when); o.stop(c.currentTime + when + dur);
-    } catch (e) { /* 忽略 */ }
-  }
-  /* 生成式 BGM：小调琶音 + 低音垫，节奏随底注加快；无音频文件，静音键统一控制 */
-  let musicTimer = null, mStep = 0;
-  const CHORDS = [[0, 3, 7], [-4, 0, 3], [3, 7, 10], [-2, 2, 5]];   // Am F C G
-  function startMusic() {
-    if (musicTimer) return;
-    const tick = () => {
-      const ante = (typeof G !== "undefined" && G.ante) || 1;
-      if (!muted && !(typeof document !== "undefined" && document.hidden)) {
-        const chord = CHORDS[Math.floor(mStep / 8) % CHORDS.length];
-        const deg = chord[Math.floor(Math.random() * chord.length)] + (Math.random() < .3 ? 12 : 0);
-        tone(220 * Math.pow(2, deg / 12), .38, "sine", .035);
-        if (mStep % 8 === 0) tone(110 * Math.pow(2, chord[0] / 12), 1.3, "triangle", .04);
-        mStep++;
-      }
-      musicTimer = setTimeout(tick, Math.max(170, 300 - Math.min(ante, 10) * 12));
-    };
-    tick();
-  }
-
-  return {
-    startMusic,
-    toggleMute: () => {
-      muted = !muted;
-      try { localStorage.setItem("joker_muted", muted ? "1" : "0"); } catch (e) { /* 忽略 */ }
-      return muted;
-    },
-    select: () => tone(520, .08, "triangle", .12),
-    deselect: () => tone(380, .08, "triangle", .1),
-    chip: i => tone(600 + i * 90, .1, "square", .07),
-    joker: () => { tone(700, .1, "triangle", .12); tone(1050, .12, "triangle", .1, .06); },
-    play: () => tone(440, .12, "triangle", .14),
-    discard: () => tone(240, .12, "sawtooth", .08),
-    buy: () => { tone(660, .1, "sine", .14); tone(880, .14, "sine", .12, .08); },
-    money: () => { tone(880, .08, "square", .08); tone(1320, .1, "square", .07, .05); },
-    win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .22, "triangle", .14, i * .1)),
-    lose: () => [392, 330, 262, 196].forEach((f, i) => tone(f, .3, "sawtooth", .1, i * .14)),
-    boss: () => { tone(150, .4, "sawtooth", .12); tone(147, .4, "sawtooth", .1, .05); },
-  };
-})();
-
 /* ---------- 盲注选择 ---------- */
 function showBlindSelect() {
   G.state = "blind-select";
@@ -98,7 +37,7 @@ function showBlindSelect() {
       <div class="bo-name ${m.cls}" style="background:${["#006bb8", "#d07f1d", "#7a1fa0"][i]}">${isBoss ? (rush ? "👹 ???" : G.boss.icon + " " + L(G.boss.name)) : L(m.name)}</div>
       <div class="bo-chip">${rush ? "👹" : isBoss ? G.boss.icon : (i === 0 ? "🔵" : "🟠")}</div>
       <div class="bo-target">${fmt(blindTarget(i))}</div>
-      <div class="bo-reward">${S("reward_word")} ${"$".repeat(BALANCE.blindRewards[i])}</div>
+      <div class="bo-reward">${S("reward_word")} ${"$".repeat(blindReward(i))}</div>
       <div class="bo-effect">${rush ? S("bossrush_hint") : isBoss ? L(G.boss.desc) : ""}</div>
       ${i < G.blindIndex
         ? `<div class="bo-done-mark">${S("done_mark")}</div>`
@@ -451,7 +390,7 @@ async function winRound() {
   render();
   await sleep(600);
   const m = BLIND_META[G.blindIndex];
-  const reward = BALANCE.blindRewards[G.blindIndex];
+  const reward = blindReward(G.blindIndex);
   const lines = [];
   let earn = reward;
   lines.push([`${S("defeat_word")} ${G.blindIndex === 2 ? L(G.boss.name) : L(m.name)}`, `$${reward}`]);
@@ -797,8 +736,13 @@ function showCollection() {
   const s = loadStats();
   const seen = new Set(s.seenJokers || []);
   G.jokers.forEach(j => seen.add(j.id));
+  const modeBests = MODES
+    .filter(m => (s.bestByMode || {})[m.id])
+    .map(m => `${m.icon}${s.bestByMode[m.id]}`)
+    .join(" ");
   $("collection-stats").textContent = S("stats_line",
-    s.games || 0, s.wins || 0, s.bestAnte || 0, fmt(s.bestScore || 0), seen.size, JOKER_DEFS.length);
+    s.games || 0, s.wins || 0, s.bestAnte || 0, fmt(s.bestScore || 0), seen.size, JOKER_DEFS.length)
+    + (modeBests ? ` · ${modeBests}` : "");
   $("collection-grid").innerHTML = JOKER_DEFS.map(d => seen.has(d.id)
     ? `<div class="cl-item" title="${L(d.desc)}"><div class="cl-icon">${d.icon}</div><div class="cl-name">${L(d.name)}</div></div>`
     : `<div class="cl-item cl-unknown"><div class="cl-icon">❓</div><div class="cl-name">???</div></div>`).join("");
@@ -826,6 +770,19 @@ function showCollection() {
     showDeckSelect(+b.dataset.seed);
   });
   $("collection").classList.remove("hidden");
+}
+
+/* 今日/每周挑战按钮的完成标记（历史里出现过该种子即视为已挑战） */
+function updateChallengeButtons() {
+  let hist = [];
+  try { hist = (loadStats().history || []); } catch (e) { /* 忽略 */ }
+  const mark = (id, key, seed) => {
+    const done = hist.some(h => h.seed === seed);
+    const el = $(id);
+    if (!el.dataset.confirm) el.textContent = S(key) + (done ? " ✓" : "");
+  };
+  mark("daily-btn", "daily_btn", todaySeed());
+  mark("weekly-btn", "weekly_btn", weekSeed());
 }
 
 /* ---------- 帮助 / 新手引导 ---------- */
@@ -870,6 +827,7 @@ function gameOver(win) {
   G.state = "over";
   localStorage.removeItem(SAVE_KEY);
   recordGameEnd(win);
+  updateChallengeButtons();
   win ? AudioFX.win() : AudioFX.lose();
   if (win) confetti(220);
   $("end-title").textContent = win ? S("win_title") : S("lose_title");
@@ -1119,7 +1077,7 @@ function renderStats() {
   $("blind-chip").className = "blind-chip " + m.chip;
   $("blind-chip").textContent = isBoss ? G.boss.icon : "";
   $("blind-target").textContent = fmt(G.state === "playing" ? G.target : blindTarget(G.blindIndex));
-  $("blind-reward").textContent = S("reward_word") + " " + "$".repeat(BALANCE.blindRewards[G.blindIndex] || 3);
+  $("blind-reward").textContent = S("reward_word") + " " + "$".repeat(blindReward(G.blindIndex) || 3);
   const eff = $("blind-effect");
   if (isBoss) { eff.textContent = L(G.boss.desc); eff.classList.remove("hidden"); }
   else eff.classList.add("hidden");
@@ -1177,276 +1135,3 @@ function applyStaticText() {
   document.title = S("game_title");
   document.documentElement?.setAttribute?.("lang", LANG === "en" ? "en" : "zh-CN");
 }
-
-/* ---------- 事件绑定 ---------- */
-/* 双击确认的破坏性按钮（重新开局 / 今日挑战） */
-function bindConfirmButton(btn, labelKey, action) {
-  btn.onclick = () => {
-    if (btn.dataset.confirm) {
-      delete btn.dataset.confirm;
-      btn.textContent = S(labelKey);
-      action();
-    } else {
-      btn.dataset.confirm = "1";
-      btn.textContent = S("confirm_abandon");
-      setTimeout(() => { delete btn.dataset.confirm; btn.textContent = S(labelKey); }, 2500);
-    }
-  };
-}
-
-function startFreshGame(seed, deckId, mode) {
-  localStorage.removeItem(SAVE_KEY);
-  document.querySelectorAll(".overlay").forEach(o => o.classList.add("hidden"));
-  newGame(seed, deckId, mode);
-  flashMessage(seed === todaySeed() ? S("daily_start", G.seed)
-    : seed === weekSeed() ? S("weekly_start", G.seed)
-    : S("seed_start", G.seed));
-}
-
-/* 起始牌组 + 模式选择（重新开局 / 每日每周挑战 / 自定义种子 / 复盘历史种子时弹出） */
-let _pendingMode = "normal";
-function showDeckSelect(seed) {
-  // 模式开关行
-  const mbox = $("mode-options");
-  const renderModes = () => {
-    mbox.innerHTML = "";
-    MODES.forEach(m => {
-      const chip = document.createElement("button");
-      chip.className = "mode-chip" + (m.id === _pendingMode ? " mode-on" : "");
-      chip.innerHTML = `${m.icon} ${L(m.name)}<small>${L(m.desc)}</small>`;
-      chip.onclick = () => { _pendingMode = m.id; renderModes(); };
-      mbox.appendChild(chip);
-    });
-  };
-  renderModes();
-  const box = $("deck-options");
-  box.innerHTML = "";
-  DECKS.forEach(d => {
-    const wrap = document.createElement("div");
-    wrap.className = "shop-item";
-    const cardEl = makeShopMiniCard("deck-card", d.icon, L(d.name), L(d.desc));
-    const btn = document.createElement("button");
-    btn.className = "btn btn-blue buy-btn";
-    btn.textContent = S("choose_btn");
-    btn.onclick = () => {
-      $("deck-select").classList.add("hidden");
-      startFreshGame(seed, d.id, _pendingMode);
-    };
-    wrap.append(cardEl, btn);
-    box.appendChild(wrap);
-  });
-  $("deck-select").classList.remove("hidden");
-}
-
-$("play-btn").onclick = playHand;
-$("discard-btn").onclick = discard;
-$("sort-rank").onclick = () => { sortHand("rank"); render(); };
-$("sort-suit").onclick = () => { sortHand("suit"); render(); };
-$("run-info-btn").onclick = showRunInfo;
-$("collection-btn").onclick = showCollection;
-$("help-btn").onclick = () => showHelp(0);
-$("close-help-btn").onclick = () => $("help").classList.add("hidden");
-$("help-prev-btn").onclick = () => showHelp(_helpPage - 1);
-$("help-next-btn").onclick = () => showHelp(_helpPage + 1);
-$("share-btn").onclick = copyShareLink;
-$("close-collection-btn").onclick = () => $("collection").classList.add("hidden");
-/* 存档导出/导入：跨设备迁移进度（存档+统计+偏好打包 base64） */
-$("export-btn").onclick = async () => {
-  const data = {
-    save: localStorage.getItem(SAVE_KEY),
-    stats: localStorage.getItem(STATS_KEY),
-    lang: LANG,
-    muted: localStorage.getItem("joker_muted"),
-  };
-  const code = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-  try {
-    await navigator.clipboard.writeText(code);
-    flashMessage(S("export_copied"));
-  } catch (e) {
-    window.prompt?.(S("export_manual"), code);
-  }
-};
-$("import-btn").onclick = () => {
-  const v = typeof window.prompt === "function" ? window.prompt(S("import_prompt"), "") : null;
-  if (!v || !v.trim()) return;
-  try {
-    const data = JSON.parse(decodeURIComponent(escape(atob(v.trim()))));
-    if (!data || (typeof data.save !== "string" && typeof data.stats !== "string")) throw new Error("bad");
-    if (data.save) localStorage.setItem(SAVE_KEY, data.save);
-    if (data.stats) localStorage.setItem(STATS_KEY, data.stats);
-    if (data.lang) localStorage.setItem("joker_lang", data.lang);
-    if (data.muted != null) localStorage.setItem("joker_muted", data.muted);
-    if (typeof location !== "undefined" && location.reload) location.reload();
-  } catch (e) {
-    flashMessage(S("import_bad"));
-  }
-};
-bindConfirmButton($("new-run-btn"), "new_run_btn", () => showDeckSelect());
-bindConfirmButton($("daily-btn"), "daily_btn", () => showDeckSelect(todaySeed()));
-bindConfirmButton($("weekly-btn"), "weekly_btn", () => showDeckSelect(weekSeed()));
-$("seed-line").onclick = () => {
-  const v = typeof window.prompt === "function"
-    ? window.prompt(S("seed_prompt"), "") : null;
-  if (!v || !v.trim()) return;
-  const t = v.trim();
-  showDeckSelect(/^\d+$/.test(t) ? parseInt(t, 10) : hashStr(t));
-};
-$("deck-cancel-btn").onclick = () => $("deck-select").classList.add("hidden");
-$("lang-btn").textContent = LANG === "zh" ? "English" : "中文";
-$("lang-btn").onclick = () => {
-  try { localStorage.setItem("joker_lang", LANG === "zh" ? "en" : "zh"); } catch (e) { /* 忽略 */ }
-  saveGame();
-  if (typeof location !== "undefined" && location.reload) location.reload();
-};
-$("close-info-btn").onclick = () => $("run-info").classList.add("hidden");
-$("deck-info").onclick = showDeckView;
-$("close-deck-btn").onclick = () => $("deck-view").classList.add("hidden");
-$("pack-skip-btn").onclick = () => {
-  skipPack();
-  $("pack-open").classList.add("hidden");
-  saveGame();
-};
-$("reroll-btn").onclick = () => {
-  if (G.freeReroll > 0) G.freeReroll--;
-  else if (G.money >= G.rerollCost) { G.money -= G.rerollCost; G.rerollCost += 1; }
-  else return;
-  AudioFX.discard();
-  for (const j of G.jokers) {
-    const def = JOKER_BY_ID.get(j.id);
-    if (def?.onReroll) def.onReroll(G, j);
-  }
-  saveGame();
-  rollShop(); renderShop(); render();
-};
-$("next-round-btn").onclick = () => {
-  $("shop").classList.add("hidden");
-  showBlindSelect();
-};
-$("restart-btn").onclick = () => {
-  $("end-screen").classList.add("hidden");
-  showDeckSelect();
-};
-$("endless-btn").onclick = () => {
-  G.endless = true;
-  $("end-screen").classList.add("hidden");
-  G.blindIndex = 0;
-  pickBoss();
-  openShop();
-  saveGame();
-  flashMessage(S("endless_start"));
-};
-
-/* 手牌点击：容器级事件委托 */
-$("hand").onclick = e => {
-  const el = e.target?.closest?.(".card");
-  if (!el) return;
-  const card = G.hand.find(c => c.id === el.dataset.cid);
-  if (card) toggleSelect(card);
-};
-
-/* 3D 倾斜：全局委托 */
-$("game").addEventListener("pointermove", handleTiltMove);
-
-/* 窗口尺寸变化（含手机转屏）→ 重排手牌间距 */
-let _resizeTimer = null;
-window.addEventListener?.("resize", () => {
-  clearTimeout(_resizeTimer);
-  _resizeTimer = setTimeout(renderHand, 150);
-});
-
-/* 点击按钮后立即失焦：避免随后的 Enter/空格 重复触发按钮而不是快捷键 */
-document.addEventListener("click", e => {
-  const btn = e.target?.closest?.("button");
-  if (btn) btn.blur?.();
-});
-
-/* 计分中点击任意处 → 4 倍速快进；触屏点空白处收起 tooltip；首次交互启动 BGM */
-document.addEventListener("pointerdown", e => {
-  AudioFX.startMusic();
-  if (G.scoring && G.speed === 1) {
-    G.speed = 4;
-    flashMessage(S("accelerate"));
-  }
-  if (NO_HOVER && !e.target?.closest?.(".joker, .consumable")) hideTooltip();
-});
-
-/* 键盘操作：
-   回合中   1-9 选牌 / Enter 出牌 / X 弃牌 / R/S 排序 / Esc 取消选择
-   盲注选择 Enter 选择 / X 跳过
-   商店     1-9 购买 / R 刷新 / Enter 下一回合
-   卡包     1-3 选取 / X 或 Esc 放弃
-   任意     M 静音 / Esc 关闭弹层 */
-document.addEventListener("keydown", e => {
-  if (e.repeat) return;
-  const k = e.key.toLowerCase();
-  if (k === "m") {
-    const muted = AudioFX.toggleMute();
-    flashMessage(muted ? S("muted") : S("unmuted"));
-    return;
-  }
-  // 信息类弹层用 Esc 关闭
-  if (e.key === "Escape") {
-    ["run-info", "deck-view", "collection", "deck-select", "help"].forEach(id => $(id).classList.add("hidden"));
-    if (G.pendingPack) { skipPack(); $("pack-open").classList.add("hidden"); saveGame(); }
-    else if (G.state === "playing" && !G.scoring && G.selected.size) { G.selected.clear(); render(); }
-    return;
-  }
-  // 卡包 3 选 1
-  if (G.pendingPack) {
-    if (/^[1-3]$/.test(k)) pickPack(+k - 1);
-    else if (k === "x") { skipPack(); $("pack-open").classList.add("hidden"); saveGame(); }
-    return;
-  }
-  if (G.state === "blind-select") {
-    if (e.key === "Enter") $("blind-options").querySelector?.("button[data-i]")?.click?.();
-    else if (k === "x") $("blind-options").querySelector?.("button[data-skip]")?.click?.();
-    return;
-  }
-  if (G.state === "shop") {
-    if (/^[1-9]$/.test(k)) {
-      const btns = document.querySelectorAll("#shop-items .buy-btn");
-      const b = btns[+k - 1];
-      if (b && !b.disabled) b.click?.();
-    } else if (k === "r" && !$("reroll-btn").disabled) $("reroll-btn").onclick();
-    else if (e.key === "Enter") $("next-round-btn").onclick();
-    return;
-  }
-  if (G.state !== "playing" || G.scoring) return;
-  if (/^[1-9]$/.test(k)) {
-    const c = G.hand[+k - 1];
-    if (c) toggleSelect(c);
-  } else if (e.key === "Enter") {
-    if (!$("play-btn").disabled) playHand();
-  } else if (k === "x") {
-    if (!$("discard-btn").disabled) discard();
-  } else if (k === "r") { sortHand("rank"); render(); }
-  else if (k === "s") { sortHand("suit"); render(); }
-});
-
-/* ---------- PWA ---------- */
-if (typeof navigator !== "undefined" && "serviceWorker" in navigator &&
-    typeof location !== "undefined" && location.protocol.startsWith("http")) {
-  navigator.serviceWorker.register("sw.js").catch(() => { /* 离线支持是增强项 */ });
-}
-
-/* ---------- 启动 ----------
-   支持 ?seed=xxx&deck=yyy 深链：与存档种子不同时开新局复现 */
-applyStaticText();
-(function boot() {
-  let urlSeed = null, urlDeck = "classic", urlMode = "normal";
-  try {
-    if (typeof location !== "undefined" && location.search) {
-      const params = new URLSearchParams(location.search);
-      const s = params.get("seed");
-      if (s) urlSeed = /^\d+$/.test(s) ? (parseInt(s, 10) >>> 0) : hashStr(s);
-      urlDeck = params.get("deck") || "classic";
-      urlMode = params.get("mode") || "normal";
-    }
-  } catch (e) { /* 忽略 */ }
-  const restored = loadGame();
-  if (urlSeed !== null && (!restored || G.seed !== urlSeed)) {
-    startFreshGame(urlSeed, urlDeck, urlMode);
-  } else if (!restored) {
-    newGame();
-  }
-})();

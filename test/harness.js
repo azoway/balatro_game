@@ -40,7 +40,7 @@ global.localStorage = {
 const fs = require("fs");
 const path = require("path");
 const ROOT = path.join(__dirname, "..");
-const SOURCES = ["i18n.js", "defs.js", "engine.js", "ui.js"];
+const SOURCES = ["i18n.js", "defs.js", "engine.js", "audio.js", "ui.js", "main.js"];
 
 let _api = null;
 function compileGame() {
@@ -50,7 +50,7 @@ function compileGame() {
     rollShop, rollEdition, buyItem, computeScoring, newGameState, newGame, skipBlind, blindTarget,
     seedRNG, rng, buildDeck, TAROTS, TAROT_BY_ID, BOSSES, PACKS, VOUCHERS, EDITIONS, DECKS, PLANETS,
     SPECTRALS, SPECTRAL_BY_ID, SKIP_TAGS, HELP_PAGES, consumableDef, sellJoker, shareLink,
-    ACHIEVEMENTS, awardAchievement, fmt, BALANCE, MODES, weekSeed, todaySeed, runMaxAnte,
+    ACHIEVEMENTS, awardAchievement, fmt, BALANCE, MODES, weekSeed, todaySeed, runMaxAnte, blindReward,
     saveGame, loadGame, useConsumable, applyCardMod, pickBoss, openPack, choosePackOption, skipPack,
     loadStats, recordGameEnd, markJokersSeen, RANK_VAL, HAND_TYPES, ANTE_BASE,
     ENH_CHIPS, ENH_MULT, ENH_STEEL_X, S, L };`;
@@ -198,10 +198,11 @@ function makeBot(api, tier = "standard") {
     }
   }
 
-  /* 自动打一整局；opts.grantJoker 开局白送小丑（用于单卡强度受控实验） */
+  /* 自动打一整局；opts.grantJoker 开局白送小丑（单卡实验），opts.mode 游戏模式 */
   async function simulate(seed, deckId = "classic", opts = {}) {
     const maxRounds = opts.maxRounds || 60;
     newGameState(seed);
+    G.mode = api.MODES.some(m => m.id === opts.mode) ? opts.mode : "normal";
     const deck = api.DECKS.find(d => d.id === deckId) || api.DECKS[0];
     G.deckId = deck.id;
     deck.apply(G);

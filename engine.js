@@ -85,6 +85,8 @@ function recordGameEnd(win) {
     else s.deckWins = s.deckWins || {};
   }
   s.bestAnte = Math.max(s.bestAnte || 0, G.endless ? G.ante : Math.min(G.ante, runMaxAnte()));
+  const reached = G.endless ? G.ante : Math.min(G.ante, runMaxAnte());
+  s.bestByMode = { ...(s.bestByMode || {}), [G.mode || "normal"]: Math.max((s.bestByMode || {})[G.mode || "normal"] || 0, reached) };
   if (G.bestHand) s.bestScore = Math.max(s.bestScore || 0, G.bestHand.total);
   s.history = [{
     d: new Date().toLocaleDateString("sv"),
@@ -292,13 +294,16 @@ function applyCardMod(id, fn) {
 }
 
 /* ---------- 盲注目标 ---------- */
-/* 快速模式取标准曲线的抽稀版（1/3/5/7 级），Boss Rush 用标准曲线 */
+/* 快速模式用专用放缓曲线（见 BALANCE.quickAnte），Boss Rush 用标准曲线 */
 function anteCurve() {
-  return G.mode === "quick"
-    ? [ANTE_BASE[0], ANTE_BASE[2], ANTE_BASE[4], ANTE_BASE[6]]
-    : ANTE_BASE;
+  return G.mode === "quick" ? BALANCE.quickAnte : ANTE_BASE;
 }
-const runMaxAnte = () => G.mode === "quick" ? 4 : MAX_ANTE;
+const runMaxAnte = () => G.mode === "quick" ? BALANCE.quickAnte.length : MAX_ANTE;
+
+/* 盲注奖励：Boss Rush 每盲注 +$1 补偿全程减益 */
+function blindReward(idx) {
+  return BALANCE.blindRewards[idx] + (G.mode === "boss_rush" ? BALANCE.bossRushRewardBonus : 0);
+}
 
 function blindTarget(idx) {
   const curve = anteCurve();

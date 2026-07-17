@@ -56,6 +56,11 @@ const BALANCE = {
      其击杀率 38.7%，为其余 Boss 中位数的 3 倍） */
   bossMultOverride: { wall: 4, needle: 1 },
   endlessGrowth: 2.5,     // 无尽模式逐底注增速
+  /* 快速模式专用曲线：直接抽稀标准曲线(100/800/3800/14000)时 51% 死在底注 3；
+     放缓后按 300 局仿真定档在机器人胜率 ~10%（标准 3%，休闲定位） */
+  quickAnte: [100, 500, 1800, 7500],
+  /* Boss Rush 每个盲注都有减益，奖励每盲注 +$1 补偿（补偿后机器人胜率 0.7%→1.7%，困难定位） */
+  bossRushRewardBonus: 1,
   rarityWeights: { common: 12, uncommon: 5, rare: 2, legendary: 1 },
   spectralChance: 0.15,   // 商店塔罗位变幻灵牌的概率
 };
@@ -699,11 +704,15 @@ const HELP_PAGES = [
     body: {
       zh: `<b>目标</b>：每回合在限定出牌次数内，让回合分数达到目标分数。<br><br>
 <b>计分公式</b>：<span class="hb">筹码 × 倍率</span>。牌型决定基础值（对子 10×2、同花 35×4…），打出的每张计分牌加筹码，小丑牌再叠加成。<br><br>
-<b>回合结构</b>：每个底注依次是 小盲注 → 大盲注 → Boss盲注（带减益）。小/大盲注可跳过换随机标签奖励。共 8 个底注，通关后可进无尽模式。<br><br>
+<b>回合结构</b>：每个底注依次是 小盲注 → 大盲注 → Boss盲注（带减益）。小/大盲注可跳过换随机标签奖励。通关后可进无尽模式。<br><br>
+<b>三种模式</b>（开局与牌组一起选）：🎴 标准 8 底注 · ⚡ 快速 4 底注（约10分钟，目标更缓）· 👹 Boss Rush 每个盲注都带随机 Boss 减益（奖励 +$1 补偿）。<br><br>
+<b>挑战</b>：「今日/每周挑战」按日期生成全球统一种子，配合结束画面的分享链接和好友同局比进度。<br><br>
 <b>操作</b>：点牌或按 1-9 选牌（≤5张），Enter 出牌，X 弃牌换新（次数有限）。`,
       en: `<b>Goal</b>: reach the target score each round within a limited number of hands.<br><br>
 <b>Scoring</b>: <span class="hb">Chips × Mult</span>. The poker hand sets the base (Pair 10×2, Flush 35×4…), each scored card adds chips, then Jokers stack on top.<br><br>
-<b>Structure</b>: each Ante is Small Blind → Big Blind → Boss Blind (with a debuff). Skip Small/Big for a random Tag reward. Beat all 8 Antes to win, then Endless.<br><br>
+<b>Structure</b>: each Ante is Small Blind → Big Blind → Boss Blind (with a debuff). Skip Small/Big for a random Tag reward. Win to unlock Endless.<br><br>
+<b>Three modes</b> (picked with your deck): 🎴 Standard 8 antes · ⚡ Quick 4 antes (~10 min, gentler targets) · 👹 Boss Rush — every blind has a random Boss debuff (+$1 reward each).<br><br>
+<b>Challenges</b>: Daily and Weekly runs use globally shared seeds — race friends on the same run via share links.<br><br>
 <b>Controls</b>: click or press 1-9 to select up to 5 cards, Enter to play, X to discard.` } },
   { title: { zh: "商店", en: "The Shop" },
     body: {
