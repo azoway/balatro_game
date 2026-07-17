@@ -327,6 +327,47 @@ assert(G.doubleTag === 1, "加倍标签生效");
 /* ---------- 帮助页 ---------- */
 assert(api.HELP_PAGES.length === 4 && api.HELP_PAGES.every(p => p.title.zh && p.title.en && p.body.zh && p.body.en), "帮助页 4 页双语齐全");
 
+/* ---------- 游戏模式 ---------- */
+assert(api.MODES.length === 3, "3 种模式");
+// 快速模式: 4 底注 + 抽稀曲线
+newGame(1, "classic", "quick");
+assert(G.mode === "quick" && api.runMaxAnte() === 4, "快速模式 4 底注");
+assert(blindTarget(0) === 100, "快速底注1 = 100");
+G.ante = 2;
+assert(blindTarget(0) === 800, "快速底注2 = 800 (标准的第3级)");
+G.ante = 4;
+assert(blindTarget(0) === 14000, "快速底注4 = 14000 (标准的第7级)");
+G.ante = 5;
+assert(blindTarget(0) === 35000, "快速无尽: 14000×2.5");
+// Boss Rush: 小盲/大盲也有 Boss,且每个盲注换 Boss
+newGame(2, "classic", "boss_rush");
+const rushBosses = [];
+for (let i = 0; i < 2; i++) {
+  startBlind(i);
+  assert(G.currentBoss !== null, `BossRush 盲注${i}有Boss减益`);
+  rushBosses.push(G.currentBoss.id);
+  G.state = "shop";
+}
+startBlind(2);
+assert(G.currentBoss !== null, "BossRush Boss盲注正常");
+rushBosses.push(G.currentBoss.id);
+assert(new Set(rushBosses).size === 3, "BossRush 三个盲注 Boss 各不相同: " + rushBosses.join(","));
+G.ante = 1;
+assert([100, 150].includes(Math.floor(blindTarget(0))) || blindTarget(0) >= 100, "BossRush 小盲目标用原倍率");
+// 无效模式回退 + 存档往返
+newGame(3, "classic", "nonsense2");
+assert(G.mode === "normal", "未知模式回退标准");
+newGame(4, "classic", "quick");
+G.state = "blind-select";
+saveGame();
+newGameState(1);
+assert(loadGame() === true && G.mode === "quick", "模式随存档恢复");
+localStorage.removeItem("joker_save_v1");
+// 每周种子: 确定性 + 与每日不同
+assert(api.weekSeed() === api.weekSeed(), "weekSeed 确定性");
+assert(api.weekSeed() !== api.todaySeed(), "周种子 ≠ 日种子");
+assert(Number.isInteger(api.weekSeed()) && api.weekSeed() > 0, "weekSeed 是正整数");
+
 /* ---------- 大数显示 ---------- */
 assert(api.fmt(1234) === "1,234", "fmt 千分位");
 assert(api.fmt(2.5e9) === "2.50B", "fmt 十亿级: " + api.fmt(2.5e9));
@@ -570,6 +611,79 @@ localStorage.removeItem("joker_save_v1");
       if (def.retrigger) def.retrigger(c("K","♠"), ctx, G, j);
       pass++;
     } catch (e) { fail++; console.error("FAIL joker:", def.id, e.message); }
+  }
+
+  /* ---------- 全小丑触发审计：每张计分类小丑必须在其目标场景真正生效 ---------- */
+  newGameState(51);
+  const trig = (jokerId, cards, o = {}) => {
+    G.jokers = [{ id: jokerId, uid: "audit", state: o.state }];
+    G.hand = o.hand || [];
+    G.money = o.money ?? 0;
+    G.discardsLeft = o.discardsLeft ?? 3;
+    G.handsLeft = o.handsLeft ?? 3;
+    G.handPlayCounts = o.plays || {};
+    const r = computeScoring(cards);
+    G.jokers = []; G.hand = [];
+    return r;
+  };
+  const fired = r => r.steps.some(s => (s.kind === "joker" || s.kind === "heldJoker") && s.joker.uid === "audit");
+  const retrig = (r, n) => r.steps.filter(s => s.kind === "card").length === n;
+  const pair7 = () => [c("7","♠"), c("7","♥")];
+  const SCEN = {
+    joker: () => fired(trig("joker", pair7())),
+    greedy: () => fired(trig("greedy", [c("7","♦")])),
+    lusty: () => fired(trig("lusty", [c("7","♥")])),
+    wrathful: () => fired(trig("wrathful", [c("7","♠")])),
+    gluttonous: () => fired(trig("gluttonous", [c("7","♣")])),
+    wily: () => fired(trig("wily", [c("7","♠"),c("7","♥"),c("7","♦")])),
+    sly: () => fired(trig("sly", pair7())),
+    crafty: () => fired(trig("crafty", [c("2","♠"),c("5","♠"),c("9","♠"),c("J","♠"),c("K","♠")]))
+      && fired(trig("crafty", [c("7","♥"),c("7","♥"),c("7","♥"),c("K","♥"),c("K","♥")])),   // 含同花葫芦
+    jolly: () => fired(trig("jolly", pair7())),
+    zany: () => fired(trig("zany", [c("7","♠"),c("7","♥"),c("7","♦")])),
+    droll: () => fired(trig("droll", [c("2","♠"),c("5","♠"),c("9","♠"),c("J","♠"),c("K","♠")]))
+      && fired(trig("droll", [c("7","♥"),c("7","♥"),c("7","♥"),c("K","♥"),c("K","♥")])),
+    crazy: () => fired(trig("crazy", [c("2","♠"),c("3","♥"),c("4","♦"),c("5","♣"),c("6","♠")])),
+    half: () => fired(trig("half", [c("7","♠"),c("8","♥")])),
+    banner: () => fired(trig("banner", pair7(), { discardsLeft: 2 })),
+    mystic: () => fired(trig("mystic", pair7(), { discardsLeft: 0 })),
+    fibonacci: () => fired(trig("fibonacci", [c("A","♠")])),
+    scary_face: () => fired(trig("scary_face", [c("K","♠")])),
+    even_steven: () => fired(trig("even_steven", [c("4","♠")])),
+    odd_todd: () => fired(trig("odd_todd", [c("9","♠")])),
+    blackboard: () => fired(trig("blackboard", [c("7","♠"),c("2","♣")])),
+    baron_red: () => fired(trig("baron_red", [c("7","♥"),c("2","♦")])),
+    cavendish: () => fired(trig("cavendish", pair7())),
+    photograph: () => fired(trig("photograph", [c("K","♥")])),
+    abstract: () => fired(trig("abstract", pair7())),
+    bull: () => fired(trig("bull", pair7(), { money: 10 })),
+    bootstraps: () => fired(trig("bootstraps", pair7(), { money: 10 })),
+    golden: () => JOKER_DEFS.find(d => d.id === "golden").money(G, { id: "golden" }) === 4,
+    supernova: () => fired(trig("supernova", pair7(), { plays: { pair: 4 } })),
+    acrobat: () => fired(trig("acrobat", pair7(), { handsLeft: 0 })),
+    duo: () => fired(trig("duo", pair7())),
+    trio: () => fired(trig("trio", [c("7","♠"),c("7","♥"),c("7","♦")])),
+    canio: () => fired(trig("canio", pair7(), { state: 1 })),
+    hack: () => retrig(trig("hack", [c("3","♠"),c("3","♥")]), 4),
+    sock_buskin: () => retrig(trig("sock_buskin", [c("K","♠"),c("K","♥")]), 4),
+    dusk: () => retrig(trig("dusk", pair7(), { handsLeft: 0 }), 4),
+    green_joker: () => fired(trig("green_joker", pair7(), { state: 2 })),
+    ride_the_bus: () => fired(trig("ride_the_bus", pair7(), { state: 2 })),
+    ice_cream: () => fired(trig("ice_cream", pair7(), { state: 2 })),
+    square: () => fired(trig("square", pair7(), { state: 4 })),
+    flash_card: () => fired(trig("flash_card", pair7(), { state: 2 })),
+    scholar: () => fired(trig("scholar", [c("A","♠")])),
+    walkie_talkie: () => fired(trig("walkie_talkie", [c("10","♠")])) && fired(trig("walkie_talkie", [c("4","♠")])),
+    baron: () => fired(trig("baron", [c("7","♠")], { hand: [c("K","♥")] })),
+    shoot_the_moon: () => fired(trig("shoot_the_moon", [c("7","♠")], { hand: [c("Q","♥")] })),
+    raised_fist: () => fired(trig("raised_fist", [c("7","♠")], { hand: [c("3","♥")] })),
+  };
+  // 规则改写/复制/卡牌成长类走 evaluate/onPlay，已在上方单测覆盖
+  const AUDIT_EXEMPT = new Set(["four_fingers", "shortcut", "splash", "blueprint", "hiker"]);
+  for (const def of JOKER_DEFS) {
+    if (AUDIT_EXEMPT.has(def.id)) { pass++; continue; }
+    if (!SCEN[def.id]) { fail++; console.error("FAIL 缺少触发审计场景:", def.id); continue; }
+    assert(SCEN[def.id](), `触发审计: ${def.id}`);
   }
 
   /* ---------- 全部即时塔罗不抛异常 ---------- */

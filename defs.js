@@ -48,8 +48,8 @@ const BALANCE = {
   interestRate: 5,        // 每 $N 得 $1 利息
   interestCap: 5,
   blindRewards: [3, 4, 5],
-  rerollBase: 5,
-  rerollClearance: 3,     // 清仓甩卖优惠券后的刷新起价
+  rerollBase: 3,
+  rerollClearance: 1,     // 清仓甩卖优惠券后的刷新起价
   bigBlindMult: 1.5,
   bossMult: 2,
   /* 个别 Boss 的目标倍率：针头只能出 1 次牌，目标不加倍（400 局数据显示 ×2 时
@@ -156,7 +156,7 @@ const JOKER_DEFS = [
   { id: "crafty", icon: "🛠", rarity: "common", cost: 4,
     name: { zh: "灵巧小丑", en: "Crafty Joker" },
     desc: { zh: "打出同花时 +80 筹码", en: "+80 Chips if hand contains a Flush" },
-    after: (s) => s.type === "flush" || s.type === "straight_flush" || s.type === "flush_five" ? { chips: 80 } : null },
+    after: (s) => ["flush", "straight_flush", "flush_house", "flush_five"].includes(s.type) ? { chips: 80 } : null },
   { id: "jolly", icon: "😆", rarity: "common", cost: 4,
     name: { zh: "快乐小丑", en: "Jolly Joker" },
     desc: { zh: "打出的牌含对子时 +8 倍率", en: "+8 Mult if hand contains a Pair" },
@@ -168,7 +168,7 @@ const JOKER_DEFS = [
   { id: "droll", icon: "🎭", rarity: "common", cost: 5,
     name: { zh: "古怪小丑", en: "Droll Joker" },
     desc: { zh: "打出同花时 +10 倍率", en: "+10 Mult if hand contains a Flush" },
-    after: (s) => s.type === "flush" || s.type === "straight_flush" || s.type === "flush_five" ? { mult: 10 } : null },
+    after: (s) => ["flush", "straight_flush", "flush_house", "flush_five"].includes(s.type) ? { mult: 10 } : null },
   { id: "crazy", icon: "🌀", rarity: "common", cost: 5,
     name: { zh: "疯狂小丑", en: "Crazy Joker" },
     desc: { zh: "打出顺子时 +12 倍率", en: "+12 Mult if hand contains a Straight" },
@@ -201,11 +201,13 @@ const JOKER_DEFS = [
     name: { zh: "奇数托德", en: "Odd Todd" },
     desc: { zh: "打出的每张奇数牌 (A,3,5,7,9) +31 筹码", en: "Played odd cards (A,3,5,7,9) give +31 Chips" },
     perCard: (c) => ["A", "3", "5", "7", "9"].includes(c.rank) ? { chips: 31 } : null },
-  { id: "blackboard", icon: "🖤", rarity: "uncommon", cost: 8,
+  /* 300局实验: -0.21,低于替换基准 0.42 → $8 降 $6 */
+  { id: "blackboard", icon: "🖤", rarity: "uncommon", cost: 6,
     name: { zh: "黑板", en: "Blackboard" },
     desc: { zh: "打出的牌全为黑色花色时 ×3 倍率", en: "×3 Mult if all played cards are black suits" },
     after: (s) => s.cards.every(c => c.suit === "♠" || c.suit === "♣") ? { xmult: 3 } : null },
-  { id: "baron_red", icon: "👸", rarity: "uncommon", cost: 8,
+  /* 300局实验: -0.29,与黑板对称同降 → $8 降 $6 */
+  { id: "baron_red", icon: "👸", rarity: "uncommon", cost: 6,
     name: { zh: "红心女王", en: "Red Queen" },
     desc: { zh: "打出的牌全为红色花色时 ×3 倍率", en: "×3 Mult if all played cards are red suits" },
     after: (s) => s.cards.every(c => c.suit === "♥" || c.suit === "♦") ? { xmult: 3 } : null },
@@ -251,7 +253,8 @@ const JOKER_DEFS = [
     name: { zh: "二重奏", en: "The Duo" },
     desc: { zh: "打出的牌含对子时 ×2 倍率", en: "×2 Mult if hand contains a Pair" },
     after: (s) => s.hasPair ? { xmult: 2 } : null },
-  { id: "trio", icon: "🎻", rarity: "rare", cost: 10,
+  /* 300局实验: -0.32,独立价值低于稀有定位 → $10 降 $8 */
+  { id: "trio", icon: "🎻", rarity: "rare", cost: 8,
     name: { zh: "三重奏", en: "The Trio" },
     desc: { zh: "打出的牌含三条时 ×3 倍率", en: "×3 Mult if hand contains Three of a Kind" },
     after: (s) => s.hasThree ? { xmult: 3 } : null },
@@ -259,6 +262,7 @@ const JOKER_DEFS = [
     name: { zh: "卡尼奥", en: "Canio" },
     desc: { zh: "×1 倍率，每弃掉一张人头牌永久 +0.5", en: "×1 Mult, gains +0.5 permanently per discarded face card" },
     after: (s, g, j) => ({ xmult: 1 + (j.state || 0) }),
+    stateText: j => `×${(1 + (j.state || 0)).toFixed(1)}`,
     onDiscard: (cards, g, j) => { j.state = (j.state || 0) + cards.filter(c => ["J", "Q", "K"].includes(c.rank)).length * 0.5; } },
 
   /* --- 重触发类: retrigger(card, ctx, g, j) 返回额外触发次数 --- */
@@ -276,15 +280,18 @@ const JOKER_DEFS = [
     retrigger: (c, s, g) => g.handsLeft === 0 ? 1 : 0 },
 
   /* --- 成长类: onPlay(ctx, g, j) 在每手结算后调用，可返回 "destroy" --- */
-  { id: "green_joker", icon: "🥒", rarity: "common", cost: 4,
+  /* 300局单卡实验: 边际增益 +0.78,高出替换基准(+0.21) 0.57 → $4 提到 $6 */
+  { id: "green_joker", icon: "🥒", rarity: "common", cost: 6,
     name: { zh: "绿色小丑", en: "Green Joker" },
     desc: { zh: "每出一手牌 +1 倍率，每弃一次牌 -1 倍率", en: "+1 Mult per hand played, -1 Mult per discard" },
+    stateText: j => `+${j.state || 0} ${S("mult_word")}`,
     after: (s, g, j) => (j.state || 0) > 0 ? { mult: j.state } : null,
     onPlay: (s, g, j) => { j.state = (j.state || 0) + 1; },
     onDiscard: (cards, g, j) => { j.state = Math.max(0, (j.state || 0) - 1); } },
   { id: "ride_the_bus", icon: "🚌", rarity: "common", cost: 5,
     name: { zh: "坐公交", en: "Ride the Bus" },
     desc: { zh: "每连续打出一手不含人头牌的牌 +1 倍率，打出人头牌则重置", en: "+1 Mult per consecutive hand without face cards; resets when a face card is played" },
+    stateText: j => `+${j.state || 0} ${S("mult_word")}`,
     after: (s, g, j) => (j.state || 0) > 0 ? { mult: j.state } : null,
     onPlay: (s, g, j) => {
       if (s.cards.some(c => ["J", "Q", "K"].includes(c.rank))) j.state = 0;
@@ -293,6 +300,7 @@ const JOKER_DEFS = [
   { id: "ice_cream", icon: "🍦", rarity: "common", cost: 4,
     name: { zh: "冰淇淋", en: "Ice Cream" },
     desc: { zh: "+100 筹码，每出一手牌融化 -5，融尽后消失", en: "+100 Chips, melts by 5 per hand played; gone when it reaches 0" },
+    stateText: j => `${Math.max(0, 100 - 5 * (j.state || 0))} ${S("chips_word")}`,
     after: (s, g, j) => {
       const v = 100 - 5 * (j.state || 0);
       return v > 0 ? { chips: v } : null;
@@ -304,11 +312,13 @@ const JOKER_DEFS = [
   { id: "square", icon: "🟦", rarity: "common", cost: 4,
     name: { zh: "方形小丑", en: "Square Joker" },
     desc: { zh: "打出的手牌恰为 4 张时，永久 +4 筹码", en: "Gains +4 Chips permanently when played hand has exactly 4 cards" },
+    stateText: j => `+${j.state || 0} ${S("chips_word")}`,
     after: (s, g, j) => (j.state || 0) > 0 ? { chips: j.state } : null,
     onPlay: (s, g, j) => { if (s.playedCount === 4) j.state = (j.state || 0) + 4; } },
   { id: "flash_card", icon: "⚡", rarity: "uncommon", cost: 6,
     name: { zh: "闪卡", en: "Flash Card" },
     desc: { zh: "每次商店刷新 +2 倍率", en: "+2 Mult per shop reroll" },
+    stateText: j => `+${j.state || 0} ${S("mult_word")}`,
     after: (s, g, j) => (j.state || 0) > 0 ? { mult: j.state } : null,
     onReroll: (g, j) => { j.state = (j.state || 0) + 2; } },
 
@@ -552,7 +562,7 @@ const VOUCHERS = [
     apply: g => {} },
   { id: "clearance", icon: "🏷", cost: 8,
     name: { zh: "清仓甩卖", en: "Clearance Sale" },
-    desc: { zh: "商店刷新费从 $3 起", en: "Shop rerolls start at $3" },
+    desc: { zh: "商店刷新费从 $1 起", en: "Shop rerolls start at $1" },
     apply: g => {} },
   { id: "crate", icon: "🧰", cost: 8,
     name: { zh: "手提箱", en: "Crate" },
@@ -582,6 +592,19 @@ const EDITIONS = {
   poly: { name: { zh: "多彩", en: "Polychrome" }, desc: { zh: "×1.5 倍率", en: "×1.5 Mult" },
     effect: { xmult: 1.5 }, costUp: 5 },
 };
+
+/* ---------- 游戏模式 ---------- */
+const MODES = [
+  { id: "normal", icon: "🎴",
+    name: { zh: "标准", en: "Standard" },
+    desc: { zh: "8 个底注", en: "8 antes" } },
+  { id: "quick", icon: "⚡",
+    name: { zh: "快速", en: "Quick" },
+    desc: { zh: "4 个底注 · 约 10 分钟", en: "4 antes · ~10 min" } },
+  { id: "boss_rush", icon: "👹",
+    name: { zh: "Boss Rush", en: "Boss Rush" },
+    desc: { zh: "每个盲注都是 Boss 减益", en: "Every blind has a Boss debuff" } },
+];
 
 /* ---------- 起始牌组 ---------- */
 const DECKS = [

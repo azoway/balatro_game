@@ -47,6 +47,16 @@ function hashStr(s) {
 }
 const todaySeed = () => hashStr("joker-" + new Date().toLocaleDateString("sv"));
 
+/* 每周挑战：ISO 周数哈希（全球同一周同一局） */
+function weekSeed() {
+  const d = new Date();
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));   // 该周的周四决定 ISO 年
+  const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((t - yearStart) / 86400000 + 1) / 7);
+  return hashStr(`joker-week-${t.getUTCFullYear()}-${week}`);
+}
+
 /* ---------- 游戏状态 ---------- */
 const G = {};
 
@@ -71,21 +81,23 @@ function recordGameEnd(win) {
   s.games = (s.games || 0) + 1;
   if (win) {
     s.wins = (s.wins || 0) + 1;
-    s.deckWins = { ...(s.deckWins || {}), [G.deckId || "classic"]: true };
+    if (G.mode !== "quick") s.deckWins = { ...(s.deckWins || {}), [G.deckId || "classic"]: true };
+    else s.deckWins = s.deckWins || {};
   }
-  s.bestAnte = Math.max(s.bestAnte || 0, G.endless ? G.ante : Math.min(G.ante, MAX_ANTE));
+  s.bestAnte = Math.max(s.bestAnte || 0, G.endless ? G.ante : Math.min(G.ante, runMaxAnte()));
   if (G.bestHand) s.bestScore = Math.max(s.bestScore || 0, G.bestHand.total);
   s.history = [{
     d: new Date().toLocaleDateString("sv"),
     seed: G.seed, ante: G.ante, win: !!win,
-    endless: !!G.endless, deck: G.deckId || "classic",
+    endless: !!G.endless, deck: G.deckId || "classic", mode: G.mode || "normal",
   }, ...(s.history || [])].slice(0, 10);
   saveStats(s);
-  if (win) {
+  // 通关/无尽成就只在标准与 Boss Rush 模式解锁（快速模式目标更低）
+  if (win && G.mode !== "quick") {
     awardAchievement("first_win");
     if (DECKS.every(d => s.deckWins[d.id])) awardAchievement("all_decks");
   }
-  if (G.ante >= 12) awardAchievement("endless12");
+  if (G.ante >= 12 && G.mode !== "quick") awardAchievement("endless12");
 }
 
 /* ---------- 成就 ---------- */
@@ -116,7 +128,7 @@ function saveGame() {
       money: G.money, ante: G.ante, round: G.round,
       blindIndex: G.blindIndex, bossId: G.boss?.id,
       jokers: G.jokers.map(j => ({ id: j.id, uid: j.uid, state: j.state, ed: j.ed })),
-      deckId: G.deckId,
+      deckId: G.deckId, mode: G.mode,
       consumables: G.consumables.map(c => ({ id: c.id, uid: c.uid })),
       handLevels: G.handLevels, handPlayCounts: G.handPlayCounts,
       seed: G.seed, rngState: _rngState,
@@ -174,6 +186,7 @@ function loadGame() {
     G.interestCap = d.interestCap ?? 5;
     G.pendingPack = d.pendingPack || null;
     G.deckId = d.deckId || "classic";
+    G.mode = MODES.some(m => m.id === d.mode) ? d.mode : "normal";
     G.voucherDiscount = !!d.voucherDiscount;
     G.investment = d.investment || 0;
     G.doubleTag = d.doubleTag || 0;
@@ -226,14 +239,15 @@ function newGameState(seed) {
     handLevels: Object.fromEntries(Object.keys(HAND_TYPES).map(k => [k, 1])),
     handPlayCounts: {},
     shopStock: [], rerollCost: 5,
-    deckId: "classic",
+    deckId: "classic", mode: "normal",
     scoring: false, speed: 1,
     state: "blind-select",
   });
 }
 
-function newGame(seed, deckId = "classic") {
+function newGame(seed, deckId = "classic", mode = "normal") {
   newGameState(seed);
+  G.mode = MODES.some(m => m.id === mode) ? mode : "normal";
   const deck = DECKS.find(d => d.id === deckId) || DECKS[0];
   G.deckId = deck.id;
   deck.apply(G);
@@ -278,11 +292,20 @@ function applyCardMod(id, fn) {
 }
 
 /* ---------- 盲注目标 ---------- */
+/* 快速模式取标准曲线的抽稀版（1/3/5/7 级），Boss Rush 用标准曲线 */
+function anteCurve() {
+  return G.mode === "quick"
+    ? [ANTE_BASE[0], ANTE_BASE[2], ANTE_BASE[4], ANTE_BASE[6]]
+    : ANTE_BASE;
+}
+const runMaxAnte = () => G.mode === "quick" ? 4 : MAX_ANTE;
+
 function blindTarget(idx) {
+  const curve = anteCurve();
   const ai = G.ante - 1;
-  const base = ai < ANTE_BASE.length
-    ? ANTE_BASE[ai]
-    : ANTE_BASE[ANTE_BASE.length - 1] * Math.pow(BALANCE.endlessGrowth, ai - ANTE_BASE.length + 1);
+  const base = ai < curve.length
+    ? curve[ai]
+    : curve[curve.length - 1] * Math.pow(BALANCE.endlessGrowth, ai - curve.length + 1);
   const bossMult = BALANCE.bossMultOverride[G.boss?.id] ?? BALANCE.bossMult;
   const mults = [1, BALANCE.bigBlindMult, bossMult];
   return Math.floor(base * (mults[idx] ?? 1));

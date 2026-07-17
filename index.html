@@ -60,7 +60,7 @@
     <div class="stats-row">
       <div class="panel stat">
         <div class="stat-label" data-i18n="ante_label">底注</div>
-        <div class="stat-value orange"><span id="ante">1</span><span class="dim">/8</span></div>
+        <div class="stat-value orange"><span id="ante">1</span><span class="dim" id="ante-max">/8</span></div>
       </div>
       <div class="panel stat">
         <div class="stat-label" data-i18n="round_label">回合</div>
@@ -73,6 +73,7 @@
     <button class="small-btn" id="collection-btn" data-i18n="collection_btn">图鉴</button>
     <button class="small-btn" id="new-run-btn" data-i18n="new_run_btn">重新开局</button>
     <button class="small-btn" id="daily-btn" data-i18n="daily_btn">今日挑战</button>
+    <button class="small-btn" id="weekly-btn" data-i18n="weekly_btn">每周挑战</button>
     <button class="small-btn" id="lang-btn">English</button>
     <div class="hotkeys seed-line" id="seed-line" title="点击输入自定义种子">种子 -</div>
     <div class="hotkeys" data-i18n="hotkeys">快捷键: 1-9选牌 · Enter出牌 · X弃牌 · R/S排序 · M静音 · 计分中点击加速</div>
@@ -120,6 +121,8 @@
     <div class="shop-box">
       <div class="shop-header" data-i18n="shop_title">🛒 商 店</div>
       <div id="shop-items"></div>
+      <div class="rh-title" data-i18n="shop_owned_title">我的小丑牌 · 点两次出售</div>
+      <div id="shop-owned"></div>
       <div class="shop-footer">
         <button class="btn btn-red" id="reroll-btn">刷新 $5</button>
         <button class="btn btn-orange" id="next-round-btn" data-i18n="next_round_btn">下一回合 ➜</button>
@@ -131,6 +134,7 @@
   <div class="overlay hidden" id="deck-select">
     <div class="shop-box">
       <div class="shop-header" data-i18n="deck_select_title">选择起始牌组</div>
+      <div id="mode-options"></div>
       <div id="deck-options"></div>
       <div class="shop-footer">
         <button class="btn btn-red" id="deck-cancel-btn" data-i18n="cancel_btn">取消</button>

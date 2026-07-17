@@ -35,6 +35,10 @@ const STR = {
   run_info_btn:      { zh: "牌型等级", en: "Hand Levels" },
   new_run_btn:       { zh: "重新开局", en: "New Run" },
   daily_btn:         { zh: "今日挑战", en: "Daily Run" },
+  weekly_btn:        { zh: "每周挑战", en: "Weekly Run" },
+  week_suffix:       { zh: " · 每周挑战", en: " · Weekly" },
+  weekly_start:      { zh: "📅 每周挑战 · 种子 {0}", en: "📅 Weekly Run · Seed {0}" },
+  bossrush_hint:     { zh: "👹 随机 Boss 减益", en: "👹 Random Boss debuff" },
   collection_btn:    { zh: "图鉴", en: "Collection" },
   confirm_abandon:   { zh: "确认放弃本局?", en: "Abandon this run?" },
   hotkeys:           { zh: "快捷键: 1-9选牌/购买 · Enter出牌/确认 · X弃牌/跳过 · R/S排序 · Esc取消 · M静音 · 计分中点击加速",
@@ -80,9 +84,11 @@ const STR = {
   reroll_cost:       { zh: "刷新 ${0}", en: "Reroll ${0}" },
   next_round_btn:    { zh: "下一回合 ➜", en: "Next round ➜" },
   sold_flash:        { zh: "卖出 {0} +${1}", en: "Sold {0} +${1}" },
+  shop_owned_title:  { zh: "我的小丑牌 · 点两次出售", en: "Your Jokers · click twice to sell" },
   sell_again:        { zh: "再点一次卖出 ${0}", en: "Click again to sell ${0}" },
   click_sell:        { zh: "点击卖出 ${0}", en: "Click to sell ${0}" },
   move_joker_tip:    { zh: "调整结算顺序", en: "Change scoring order" },
+  current_word:      { zh: "当前", en: "Now" },
 
   /* 塔罗 / 消耗品 */
   tarot_label:       { zh: "塔罗牌", en: "Tarot" },

@@ -93,12 +93,13 @@ function showBlindSelect() {
     const el = document.createElement("div");
     el.className = "blind-option" + (i < G.blindIndex ? " done" : "");
     const isBoss = i === 2;
+    const rush = G.mode === "boss_rush";   // Boss Rush: 每个盲注开打时才随机 Boss，预览为未知
     el.innerHTML = `
-      <div class="bo-name ${m.cls}" style="background:${["#006bb8", "#d07f1d", "#7a1fa0"][i]}">${isBoss ? (G.boss.icon + " " + L(G.boss.name)) : L(m.name)}</div>
-      <div class="bo-chip">${isBoss ? G.boss.icon : (i === 0 ? "🔵" : "🟠")}</div>
+      <div class="bo-name ${m.cls}" style="background:${["#006bb8", "#d07f1d", "#7a1fa0"][i]}">${isBoss ? (rush ? "👹 ???" : G.boss.icon + " " + L(G.boss.name)) : L(m.name)}</div>
+      <div class="bo-chip">${rush ? "👹" : isBoss ? G.boss.icon : (i === 0 ? "🔵" : "🟠")}</div>
       <div class="bo-target">${fmt(blindTarget(i))}</div>
       <div class="bo-reward">${S("reward_word")} ${"$".repeat(BALANCE.blindRewards[i])}</div>
-      <div class="bo-effect">${isBoss ? L(G.boss.desc) : ""}</div>
+      <div class="bo-effect">${rush ? S("bossrush_hint") : isBoss ? L(G.boss.desc) : ""}</div>
       ${i < G.blindIndex
         ? `<div class="bo-done-mark">${S("done_mark")}</div>`
         : i === G.blindIndex
@@ -135,7 +136,10 @@ function skipBlind() {
 
 function startBlind(idx) {
   G.blindIndex = idx;
-  G.currentBoss = idx === 2 ? G.boss : null;
+  // Boss Rush: 每个盲注都换一个新 Boss 并生效其减益（目标倍率仍按盲注位置）
+  // 小盲/大盲选新 Boss 会覆盖底注开局那次 pickBoss，因此 Boss 盲注也要重新选
+  if (G.mode === "boss_rush") pickBoss();
+  G.currentBoss = (G.mode === "boss_rush" || idx === 2) ? G.boss : null;
   G.round++;
   G.roundScore = 0;
   G.target = blindTarget(idx);
@@ -492,8 +496,8 @@ async function winRound() {
     // Boss 击败 → 下一底注
     if (G.blindIndex === 2) {
       G.ante++;
-      if (G.ante >= 12) awardAchievement("endless12");
-      if (!G.endless && G.ante > MAX_ANTE) { gameOver(true); return; }
+      if (G.ante >= 12 && G.mode !== "quick") awardAchievement("endless12");
+      if (!G.endless && G.ante > runMaxAnte()) { gameOver(true); return; }
       G.blindIndex = 0;
       pickBoss();
     } else {
@@ -567,6 +571,36 @@ function renderShop() {
   });
   $("reroll-btn").textContent = G.freeReroll > 0 ? S("reroll_free", G.freeReroll) : S("reroll_cost", G.rerollCost);
   $("reroll-btn").disabled = G.freeReroll <= 0 && G.money < G.rerollCost;
+
+  // 已持有的小丑：商店内直接出售，方便腾位换新（两次点击确认）
+  const owned = $("shop-owned");
+  owned.innerHTML = "";
+  if (!G.jokers.length) {
+    owned.innerHTML = `<span class="so-empty">—</span>`;
+  } else {
+    G.jokers.forEach(j => {
+      const def = JOKER_BY_ID.get(j.id);
+      const el = document.createElement("button");
+      el.className = "so-joker";
+      el.innerHTML = `${def.icon} ${L(def.name)} <b>+$${sellValue(def)}</b>`;
+      el.title = L(def.desc);
+      el.onclick = () => {
+        if (el.dataset.confirm) { sellJoker(j); return; }
+        owned.querySelectorAll?.(".so-joker").forEach?.(x => { delete x.dataset.confirm; x.classList.remove("so-confirm"); });
+        el.dataset.confirm = "1";
+        el.classList.add("so-confirm");
+        el.innerHTML = `${S("sell_again", sellValue(def))}`;
+        setTimeout(() => {
+          if (el.dataset.confirm) {
+            delete el.dataset.confirm;
+            el.classList.remove("so-confirm");
+            el.innerHTML = `${def.icon} ${L(def.name)} <b>+$${sellValue(def)}</b>`;
+          }
+        }, 2500);
+      };
+      owned.appendChild(el);
+    });
+  }
 }
 
 function buyItem(item, price) {
@@ -778,9 +812,10 @@ function showCollection() {
   $("run-history").innerHTML = hist.length
     ? hist.map(h => {
         const deck = DECKS.find(d => d.id === h.deck) || DECKS[0];
+        const md = MODES.find(m => m.id === h.mode);
         return `<div class="rh-row">
           <span class="rh-date">${h.d}</span>
-          <span>${h.win ? "🏆" : "💀"} ${S("ante_word")} ${h.ante}${h.endless ? "∞" : ""} · ${deck.icon}</span>
+          <span>${h.win ? "🏆" : "💀"} ${S("ante_word")} ${h.ante}${h.endless ? "∞" : ""} · ${deck.icon}${md && md.id !== "normal" ? md.icon : ""}</span>
           <span class="rh-seed">${h.seed}</span>
           <button class="small-btn rh-replay" data-seed="${h.seed}" title="${S("replay_tip")}">↻</button>
         </div>`;
@@ -840,7 +875,7 @@ function gameOver(win) {
   $("end-title").textContent = win ? S("win_title") : S("lose_title");
   $("end-title").className = "end-title " + (win ? "win" : "lose");
   $("end-detail").innerHTML = (win
-    ? S("win_detail", MAX_ANTE, G.money)
+    ? S("win_detail", runMaxAnte(), G.money)
     : `${S("fell_at")} ${G.endless ? S("endless_word") + " · " : ""}${S("ante_word")} ${G.ante} · ${G.blindIndex === 2 ? L(G.boss.name) : L(BLIND_META[G.blindIndex].name)}<br>${S("short_by", fmt(Math.max(0, G.target - G.roundScore)))}`)
     + runStatsHTML();
   $("endless-btn").classList.toggle("hidden", !win);
@@ -850,7 +885,8 @@ function gameOver(win) {
 /* 分享链接：?seed=xxx&deck=yyy 打开即可复现同一局 */
 function shareLink() {
   if (typeof location === "undefined") return "";
-  return `${location.origin}${location.pathname}?seed=${G.seed}&deck=${G.deckId || "classic"}`;
+  const mode = G.mode && G.mode !== "normal" ? `&mode=${G.mode}` : "";
+  return `${location.origin}${location.pathname}?seed=${G.seed}&deck=${G.deckId || "classic"}${mode}`;
 }
 async function copyShareLink() {
   const url = shareLink();
@@ -960,6 +996,14 @@ function renderHand() {
     c.isNew = false;
     box.appendChild(el);
   });
+  // 动态间距：按容器宽度计算重叠量，窄屏不再挤成一叠（CSS 固定负边距仅作无 JS 兜底）
+  const w = box.clientWidth || 0;
+  if (w > 0 && n > 1) {
+    const els = box.querySelectorAll(".card");
+    const cardW = els[0]?.offsetWidth || 92;
+    const gap = Math.min(10, Math.max((w - 8 - cardW * n) / (n - 1), -cardW * 0.62));
+    els.forEach((el, i) => { el.style.margin = i === 0 ? "0" : `0 0 0 ${gap.toFixed(1)}px`; });
+  }
   $("deck-count").textContent = `${G.deck.length}/${G.masterDeck.length}`;
 }
 
@@ -970,17 +1014,19 @@ function makeJokerEl(j, isShop = false) {
   el.dataset.jid = j.uid;
   const edBadge = j.ed ? `<div class="ed-tag ed-${j.ed}">${L(EDITIONS[j.ed].name)}</div>` : "";
   if (j.ed) el.classList.add("ed-" + j.ed);
-  el.innerHTML = `<div class="j-icon">${def.icon}</div><div class="j-name">${L(def.name)}</div><div class="j-tag">${L(RARITY_NAME[def.rarity])}</div>${edBadge}`;
-  el.onmouseenter = e => showTooltip(e, def, isShop, j.ed);
+  // 成长型小丑：卡面常显当前成长值
+  const stateBadge = def.stateText ? `<div class="j-state">${def.stateText(j)}</div>` : "";
+  el.innerHTML = `<div class="j-icon">${def.icon}</div><div class="j-name">${L(def.name)}</div><div class="j-tag">${L(RARITY_NAME[def.rarity])}</div>${edBadge}${stateBadge}`;
+  el.onmouseenter = e => showTooltip(e, def, isShop, j.ed, j);
   el.onmousemove = e => moveTooltip(e);
   el.onmouseleave = () => { hideTooltip(); cancelSellConfirm(el); };
   // 触屏设备无 hover：点击商店小丑牌显示说明
-  if (isShop && NO_HOVER) el.onclick = e => showTooltip(e, def, true, j.ed);
+  if (isShop && NO_HOVER) el.onclick = e => showTooltip(e, def, true, j.ed, j);
   if (!isShop) {
     // 双击确认出售（避免原生 confirm 阻塞动画）
     el.onclick = e => {
       if (el.classList.contains("confirm-sell")) { sellJoker(j); return; }
-      if (NO_HOVER) showTooltip(e, def, false, j.ed);   // 触屏首次点击先看说明
+      if (NO_HOVER) showTooltip(e, def, false, j.ed, j);   // 触屏首次点击先看说明
       document.querySelectorAll(".joker.confirm-sell, .consumable.confirm-sell").forEach(cancelSellConfirm);
       el.classList.add("confirm-sell");
       const badge = document.createElement("div");
@@ -1002,12 +1048,14 @@ function makeJokerEl(j, isShop = false) {
   return el;
 }
 
-function showTooltip(e, def, isShop, ed) {
+function showTooltip(e, def, isShop, ed, inst) {
   const tt = $("tooltip");
   const edLine = ed ? `<div class="tt-ed">✨ ${L(EDITIONS[ed].name)}: ${L(EDITIONS[ed].desc)}</div>` : "";
+  const stateLine = def.stateText && inst
+    ? `<div class="tt-state">📈 ${S("current_word")}: ${def.stateText(inst)}</div>` : "";
   tt.innerHTML = `<div class="tt-title">${def.icon} ${L(def.name)}</div>
     <div class="tt-rarity ${def.rarity}">${L(RARITY_NAME[def.rarity])}</div>
-    <div class="tt-desc">${L(def.desc)}</div>${edLine}
+    <div class="tt-desc">${L(def.desc)}</div>${stateLine}${edLine}
     ${isShop ? "" : `<div class="tt-sell">${S("click_sell", sellValue(def))}</div>`}`;
   tt.classList.remove("hidden");
   moveTooltip(e);
@@ -1057,9 +1105,13 @@ function renderStats() {
   $("discards-left").textContent = G.discardsLeft;
   $("money").textContent = "$" + G.money;
   $("ante").textContent = G.ante + (G.endless ? "∞" : "");
+  $("ante-max").textContent = "/" + runMaxAnte();
   $("round").textContent = G.round;
   $("round-score").textContent = fmt(G.roundScore);
-  $("seed-line").textContent = `${S("seed_word")} ${G.seed ?? "-"}${G.seed === todaySeed() ? S("today_suffix") : ""}`;
+  const modeDef = MODES.find(m => m.id === G.mode);
+  const modeTag = G.mode !== "normal" && modeDef ? ` · ${modeDef.icon}${L(modeDef.name)}` : "";
+  const seedTag = G.seed === todaySeed() ? S("today_suffix") : G.seed === weekSeed() ? S("week_suffix") : "";
+  $("seed-line").textContent = `${S("seed_word")} ${G.seed ?? "-"}${seedTag}${modeTag}`;
   const m = BLIND_META[G.blindIndex] || BLIND_META[0];
   const isBoss = G.blindIndex === 2 && G.state === "playing";
   $("blind-name").textContent = isBoss ? `${G.boss.icon} ${L(G.boss.name)}` : L(m.name);
@@ -1142,15 +1194,31 @@ function bindConfirmButton(btn, labelKey, action) {
   };
 }
 
-function startFreshGame(seed, deckId) {
+function startFreshGame(seed, deckId, mode) {
   localStorage.removeItem(SAVE_KEY);
   document.querySelectorAll(".overlay").forEach(o => o.classList.add("hidden"));
-  newGame(seed, deckId);
-  flashMessage(seed === todaySeed() ? S("daily_start", G.seed) : S("seed_start", G.seed));
+  newGame(seed, deckId, mode);
+  flashMessage(seed === todaySeed() ? S("daily_start", G.seed)
+    : seed === weekSeed() ? S("weekly_start", G.seed)
+    : S("seed_start", G.seed));
 }
 
-/* 起始牌组选择（重新开局 / 今日挑战 / 自定义种子 / 复盘历史种子时弹出） */
+/* 起始牌组 + 模式选择（重新开局 / 每日每周挑战 / 自定义种子 / 复盘历史种子时弹出） */
+let _pendingMode = "normal";
 function showDeckSelect(seed) {
+  // 模式开关行
+  const mbox = $("mode-options");
+  const renderModes = () => {
+    mbox.innerHTML = "";
+    MODES.forEach(m => {
+      const chip = document.createElement("button");
+      chip.className = "mode-chip" + (m.id === _pendingMode ? " mode-on" : "");
+      chip.innerHTML = `${m.icon} ${L(m.name)}<small>${L(m.desc)}</small>`;
+      chip.onclick = () => { _pendingMode = m.id; renderModes(); };
+      mbox.appendChild(chip);
+    });
+  };
+  renderModes();
   const box = $("deck-options");
   box.innerHTML = "";
   DECKS.forEach(d => {
@@ -1162,7 +1230,7 @@ function showDeckSelect(seed) {
     btn.textContent = S("choose_btn");
     btn.onclick = () => {
       $("deck-select").classList.add("hidden");
-      startFreshGame(seed, d.id);
+      startFreshGame(seed, d.id, _pendingMode);
     };
     wrap.append(cardEl, btn);
     box.appendChild(wrap);
@@ -1215,6 +1283,7 @@ $("import-btn").onclick = () => {
 };
 bindConfirmButton($("new-run-btn"), "new_run_btn", () => showDeckSelect());
 bindConfirmButton($("daily-btn"), "daily_btn", () => showDeckSelect(todaySeed()));
+bindConfirmButton($("weekly-btn"), "weekly_btn", () => showDeckSelect(weekSeed()));
 $("seed-line").onclick = () => {
   const v = typeof window.prompt === "function"
     ? window.prompt(S("seed_prompt"), "") : null;
@@ -1277,6 +1346,13 @@ $("hand").onclick = e => {
 
 /* 3D 倾斜：全局委托 */
 $("game").addEventListener("pointermove", handleTiltMove);
+
+/* 窗口尺寸变化（含手机转屏）→ 重排手牌间距 */
+let _resizeTimer = null;
+window.addEventListener?.("resize", () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(renderHand, 150);
+});
 
 /* 点击按钮后立即失焦：避免随后的 Enter/空格 重复触发按钮而不是快捷键 */
 document.addEventListener("click", e => {
@@ -1357,18 +1433,19 @@ if (typeof navigator !== "undefined" && "serviceWorker" in navigator &&
    支持 ?seed=xxx&deck=yyy 深链：与存档种子不同时开新局复现 */
 applyStaticText();
 (function boot() {
-  let urlSeed = null, urlDeck = "classic";
+  let urlSeed = null, urlDeck = "classic", urlMode = "normal";
   try {
     if (typeof location !== "undefined" && location.search) {
       const params = new URLSearchParams(location.search);
       const s = params.get("seed");
       if (s) urlSeed = /^\d+$/.test(s) ? (parseInt(s, 10) >>> 0) : hashStr(s);
       urlDeck = params.get("deck") || "classic";
+      urlMode = params.get("mode") || "normal";
     }
   } catch (e) { /* 忽略 */ }
   const restored = loadGame();
   if (urlSeed !== null && (!restored || G.seed !== urlSeed)) {
-    startFreshGame(urlSeed, urlDeck);
+    startFreshGame(urlSeed, urlDeck, urlMode);
   } else if (!restored) {
     newGame();
   }
