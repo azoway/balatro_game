@@ -1145,6 +1145,7 @@ function showRunInfo() {
 function applyStaticText() {
   const els = document.querySelectorAll?.("[data-i18n]");
   if (els?.forEach) els.forEach(el => { el.textContent = S(el.dataset.i18n); });
+  $("version-line").textContent = "v" + GAME_VERSION;
   document.title = S("game_title");
   document.documentElement?.setAttribute?.("lang", LANG === "en" ? "en" : "zh-CN");
 }

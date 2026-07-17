@@ -1,7 +1,9 @@
-/* 回归测试：牌型 / 计分 / 塔罗 / 商店 / 存档迁移 / SW 资源校验 + 机器人整局模拟 */
+/* 回归测试：牌型 / 计分 / 塔罗 / 商店 / 存档迁移 / SW 资源校验 + 机器人整局模拟
+   --fast: 全程快进时钟并跳过整局模拟，供日常迭代秒级反馈（提交前跑全量） */
 const fs = require("fs");
 const path = require("path");
 const { elements, compileGame, enableFastClock, makeBot, ROOT } = require("./harness");
+const FAST = process.argv.includes("--fast");
 
 const api = compileGame();
 const { G, evaluate, playHand, startBlind, discard, JOKER_DEFS, rollShop, rollEdition, buyItem,
@@ -582,6 +584,11 @@ const v3save = { ...v2save, v: 3, masterDeck: G.masterDeck, consumables: [{ id: 
 localStorage.setItem("joker_save_v1", JSON.stringify(v3save));
 assert(loadGame() === true, "v3 旧档可加载");
 assert(G.consumables.length === 1 && G.seenBosses.length === 1 && G.bestHand.total === 99, "v3 字段恢复");
+// v4 档（无 mode/soldCount/搁置字段时代）
+const v4save = { ...v3save, v: 4, vouchers: ["crate"], maxJokers: 5, maxConsumables: 3, interestCap: 5, deckId: "red" };
+localStorage.setItem("joker_save_v1", JSON.stringify(v4save));
+assert(loadGame() === true, "v4 旧档可加载");
+assert(G.mode === "normal" && G.soldCount === 0 && G.deckId === "red" && G.maxConsumables === 3, "v4 新字段取默认、旧字段恢复");
 localStorage.removeItem("joker_save_v1");
 
 /* ---------- SW 资源清单与缓存版本校验 ---------- */
@@ -597,6 +604,8 @@ localStorage.removeItem("joker_save_v1");
   for (const f of expected) {
     assert(assetList.includes(f), `SW 清单包含: ${f}`);
   }
+  // 版本单一来源：SW 缓存名必须等于 "joker-" + GAME_VERSION
+  assert(cacheName === "joker-" + api.GAME_VERSION, `SW CACHE(${cacheName}) 与 GAME_VERSION(${api.GAME_VERSION}) 不一致`);
   // 语义：相对上一次提交（HEAD），若资源有改动则 CACHE 必须已升级——一个提交周期只需升一次
   try {
     const { execSync } = require("child_process");
@@ -613,6 +622,8 @@ localStorage.removeItem("joker_save_v1");
 }
 
 (async () => {
+  if (FAST) enableFastClock();
+
   /* ---------- 回合流程 ---------- */
   newGameState(2026);
   G.boss = BOSSES[0];
@@ -750,23 +761,27 @@ localStorage.removeItem("joker_save_v1");
   }
 
   /* ---------- 种子全局模拟（快进时钟 + 策略机器人，覆盖不同起始牌组） ---------- */
-  enableFastClock();
-  const bot = makeBot(api);
-  let bestAnte = 0;
-  const deckIds = ["classic", "blue", "red"];
-  for (const [i, seed] of [1001, 20260716, 777].entries()) {
-    try {
-      const { result, violations } = await bot.simulate(seed, deckIds[i]);
-      bestAnte = Math.max(bestAnte, G.ante);
-      console.log(`模拟 seed=${seed} ${deckIds[i]}: ${result}, 底注 ${G.ante}, 回合 ${G.round}, 小丑 ${G.jokers.length}, $${G.money}`);
-      assert(["win", "lose", "cap"].includes(result), `模拟正常结束 (seed=${seed}): ${result}`);
-      assert(violations.length === 0, `模拟无不变量违规 (seed=${seed}): ${violations.join("; ")}`);
-    } catch (e) {
-      fail++;
-      console.error(`FAIL 模拟崩溃 (seed=${seed}):`, e.stack || e.message);
+  if (FAST) {
+    console.log("(--fast: 跳过整局模拟)");
+  } else {
+    enableFastClock();
+    const bot = makeBot(api);
+    let bestAnte = 0;
+    const deckIds = ["classic", "blue", "red"];
+    for (const [i, seed] of [1001, 20260716, 777].entries()) {
+      try {
+        const { result, violations } = await bot.simulate(seed, deckIds[i]);
+        bestAnte = Math.max(bestAnte, G.ante);
+        console.log(`模拟 seed=${seed} ${deckIds[i]}: ${result}, 底注 ${G.ante}, 回合 ${G.round}, 小丑 ${G.jokers.length}, $${G.money}`);
+        assert(["win", "lose", "cap"].includes(result), `模拟正常结束 (seed=${seed}): ${result}`);
+        assert(violations.length === 0, `模拟无不变量违规 (seed=${seed}): ${violations.join("; ")}`);
+      } catch (e) {
+        fail++;
+        console.error(`FAIL 模拟崩溃 (seed=${seed}):`, e.stack || e.message);
+      }
     }
+    assert(bestAnte >= 2, "机器人至少打到底注 2（覆盖商店/Boss路径）: " + bestAnte);
   }
-  assert(bestAnte >= 2, "机器人至少打到底注 2（覆盖商店/Boss路径）: " + bestAnte);
 
   console.log("结果: " + pass + " 通过, " + fail + " 失败");
   process.exit(fail ? 1 : 0);

@@ -161,7 +161,7 @@ function saveGame() {
   if (G.jokers?.some(j => JOKER_BY_ID.get(j.id)?.rarity === "legendary")) awardAchievement("legendary");
   try {
     const data = {
-      v: 4,
+      v: 5,
       money: G.money, ante: G.ante, round: G.round,
       blindIndex: G.blindIndex, bossId: G.boss?.id,
       jokers: G.jokers.map(j => ({ id: j.id, uid: j.uid, state: j.state, ed: j.ed })),
