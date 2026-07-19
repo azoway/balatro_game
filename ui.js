@@ -359,6 +359,16 @@ function discard() {
   G.hand = G.hand.filter(c => !G.selected.has(c.id));
   G.selected.clear();
   drawToFull();
+
+  // 弃牌后安全检查：手牌为空且无法继续游戏时判负
+  if (G.hand.length === 0 && G.deck.length === 0 && G.handsLeft > 0) {
+    flashMessage(S("no_cards_left"));
+    setTimeout(() => {
+      G.handsLeft = 0;
+      winRound(false);
+    }, 1200);
+  }
+
   saveGame();
   render();
 }
@@ -656,6 +666,16 @@ function moveJoker(j, dir) {
 function useConsumable(cons) {
   if (G.scoring) return false;
   const def = consumableDef(cons.id);
+
+  // 检查前置条件（灵魂等幻灵牌）
+  if (def.canUse) {
+    const check = def.canUse(G);
+    if (!check.ok) {
+      flashMessage(L(check.reason));
+      return false;
+    }
+  }
+
   let msg;
   if (def.targets) {
     if (G.state !== "playing") { flashMessage(S("only_in_round")); return false; }
@@ -669,7 +689,6 @@ function useConsumable(cons) {
     G.selected.clear();
   } else {
     msg = def.apply(G);
-    if (msg === null) { flashMessage(S("cannot_use")); return false; }   // 幻灵牌条件不满足，不消耗
   }
   G.consumables = G.consumables.filter(x => x !== cons);
   AudioFX.buy();

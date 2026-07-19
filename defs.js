@@ -6,7 +6,7 @@
 "use strict";
 
 /* 版本号：与 sw.js 的 CACHE("joker-" + 版本) 保持一致，由测试强制校验 */
-const GAME_VERSION = "1.0.0";
+const GAME_VERSION = "1.1.0";
 
 /* ---------- 扑克常量 ---------- */
 const SUITS = ["♠", "♥", "♣", "♦"];
@@ -522,10 +522,14 @@ const SPECTRALS = [
   { id: "the_soul", icon: "👁", cost: 10, spectral: true,
     name: { zh: "灵魂", en: "The Soul" },
     desc: { zh: "获得一张随机传奇小丑牌", en: "Gain a random Legendary Joker" },
-    apply: g => {
-      if (g.jokers.length >= g.maxJokers) return null;
+    canUse: g => {
+      if (g.jokers.length >= g.maxJokers) return { ok: false, reason: { zh: "小丑牌槽位已满", en: "Joker slots full" } };
       const pool = JOKER_DEFS.filter(d => d.rarity === "legendary" && !g.jokers.some(j => j.id === d.id));
-      if (!pool.length) return null;
+      if (!pool.length) return { ok: false, reason: { zh: "无可用传奇小丑", en: "No legendary Jokers available" } };
+      return { ok: true };
+    },
+    apply: g => {
+      const pool = JOKER_DEFS.filter(d => d.rarity === "legendary" && !g.jokers.some(j => j.id === d.id));
       const def = rnd(pool);
       g.jokers.push({ id: def.id, uid: "j" + Date.now() + Math.random().toString(36).slice(2, 5) });
       return `${def.icon} ${L(def.name)}`;
