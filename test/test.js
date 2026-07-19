@@ -9,7 +9,7 @@ const api = compileGame();
 const { G, evaluate, playHand, startBlind, discard, JOKER_DEFS, rollShop, rollEdition, buyItem,
   computeScoring, newGameState, newGame, skipBlind, blindTarget, seedRNG, rng, buildDeck,
   TAROTS, TAROT_BY_ID, BOSSES, VOUCHERS, EDITIONS, DECKS, HAND_TYPES,
-  saveGame, loadGame, useConsumable, pickBoss, openPack, choosePackOption, skipPack,
+  saveGame, loadGame, useConsumable, pickBoss, openPack, choosePackOption, skipPack, openShop,
   loadStats, recordGameEnd, markJokersSeen,
   ENH_CHIPS, ENH_MULT, ENH_STEEL_X, S, L } = api;
 
@@ -665,6 +665,68 @@ localStorage.removeItem("joker_save_v1");
   }
   localStorage.removeItem("joker_save_v1");
 
+  /* ---------- 传奇：奇科禁用 Boss（AUDIT_EXEMPT，效果在 activeBossFor） ---------- */
+  newGameState(777);
+  G.boss = BOSSES.find(b => b.id === "water");
+  startBlind(2);
+  assert(G.currentBoss?.id === "water" && G.maxDiscards === 0, "无奇科: 流水正常清零弃牌");
+  newGameState(777);
+  G.jokers = [{ id: "chicot", uid: "jc" }];
+  G.boss = BOSSES.find(b => b.id === "water");
+  startBlind(2);
+  assert(G.currentBoss === null, "奇科: Boss 盲注 currentBoss 置空");
+  assert(G.maxDiscards > 0, "奇科: 流水弃牌限制失效");
+  newGameState(778);
+  G.jokers = [{ id: "chicot", uid: "jc" }];
+  G.boss = BOSSES.find(b => b.id === "needle");
+  startBlind(2);
+  assert(G.maxHands > 1, "奇科: 针头出牌限制失效");
+  // Boss Rush 每个盲注都是 Boss，同样被禁用；回合中读档保持禁用
+  newGameState(779);
+  G.mode = "boss_rush";
+  G.jokers = [{ id: "chicot", uid: "jc" }];
+  startBlind(0);
+  assert(G.currentBoss === null, "奇科: Boss Rush 小盲也禁用");
+  saveGame();
+  newGameState(1);
+  assert(loadGame() === true && G.currentBoss === null, "奇科: 回合中读档仍禁用");
+  // 无奇科的 Boss Rush 回合中读档要恢复 Boss 减益（旧实现会丢）
+  newGameState(780);
+  G.mode = "boss_rush";
+  startBlind(0);
+  const brBoss = G.currentBoss?.id;
+  saveGame();
+  newGameState(1);
+  assert(loadGame() === true && !!brBoss && G.currentBoss?.id === brBoss, "Boss Rush 回合中读档恢复 Boss 减益");
+  localStorage.removeItem("joker_save_v1");
+
+  /* ---------- 传奇：佩尔科复制消耗品（AUDIT_EXEMPT，onShopEnter 钩子） ---------- */
+  newGameState(781);
+  G.jokers = [{ id: "perkeo", uid: "jp" }];
+  G.consumables = [{ id: "hermit", uid: "pc1" }];
+  openShop();
+  assert(G.consumables.length === 2 && G.consumables[1].id === "hermit", "佩尔科: 进店复制手中消耗品");
+  assert(G.consumables[0].uid !== G.consumables[1].uid, "佩尔科: 复制体 uid 独立");
+  openShop();
+  assert(G.consumables.length === 2, "佩尔科: 槽满不复制");
+  G.consumables = [];
+  openShop();
+  assert(G.consumables.length === 0, "佩尔科: 无消耗品不复制");
+  localStorage.removeItem("joker_save_v1");
+
+  /* ---------- 传奇：特里布莱 / 约里克数值 ---------- */
+  newGameState(782);
+  const kk = () => [c("K","♠"), c("K","♥")];
+  const kkMult = computeScoring(kk(), G).mult;
+  G.jokers = [{ id: "triboulet", uid: "tb" }];
+  assert(computeScoring(kk(), G).mult === kkMult * 4, "特里布莱: 两张K共×4倍率");
+  G.jokers = [{ id: "yorick", uid: "yk", state: 30 }];
+  assert(computeScoring(kk(), G).mult === kkMult * 3, "约里克: 累计弃30张 ×3 倍率");
+  const yk = { id: "yorick", uid: "yk2", state: 0 };
+  JOKER_DEFS.find(d => d.id === "yorick").onDiscard([c("K","♠"), c("2","♥")], G, yk);
+  assert(yk.state === 2, "约里克: 弃牌张数累计");
+  G.jokers = [];
+
   /* ---------- 全部小丑牌回调不抛异常 ---------- */
   for (const def of JOKER_DEFS) {
     const ctx = { type: "pair", cards: [c("7","♠"), c("7","♥")], playedCount: 2, hasPair: true, hasThree: false, firstFace: null };
@@ -676,6 +738,7 @@ localStorage.removeItem("joker_save_v1");
       if (def.onDiscard) def.onDiscard([c("K","♠")], G, j);
       if (def.onPlay) def.onPlay(ctx, G, j);
       if (def.onReroll) def.onReroll(G, j);
+      if (def.onShopEnter) def.onShopEnter(G, j);
       if (def.retrigger) def.retrigger(c("K","♠"), ctx, G, j);
       pass++;
     } catch (e) { fail++; console.error("FAIL joker:", def.id, e.message); }
@@ -732,6 +795,9 @@ localStorage.removeItem("joker_save_v1");
     duo: () => fired(trig("duo", pair7())),
     trio: () => fired(trig("trio", [c("7","♠"),c("7","♥"),c("7","♦")])),
     canio: () => fired(trig("canio", pair7(), { state: 1 })),
+    triboulet: () => fired(trig("triboulet", [c("K","♠"),c("K","♥")]))
+      && fired(trig("triboulet", [c("Q","♠"),c("Q","♥")])),
+    yorick: () => fired(trig("yorick", pair7(), { state: 15 })),
     hack: () => retrig(trig("hack", [c("3","♠"),c("3","♥")]), 4),
     sock_buskin: () => retrig(trig("sock_buskin", [c("K","♠"),c("K","♥")]), 4),
     dusk: () => retrig(trig("dusk", pair7(), { handsLeft: 0 }), 4),
@@ -746,8 +812,8 @@ localStorage.removeItem("joker_save_v1");
     shoot_the_moon: () => fired(trig("shoot_the_moon", [c("7","♠")], { hand: [c("Q","♥")] })),
     raised_fist: () => fired(trig("raised_fist", [c("7","♠")], { hand: [c("3","♥")] })),
   };
-  // 规则改写/复制/卡牌成长类走 evaluate/onPlay，已在上方单测覆盖
-  const AUDIT_EXEMPT = new Set(["four_fingers", "shortcut", "splash", "blueprint", "hiker"]);
+  // 规则改写/复制/卡牌成长类走 evaluate/onPlay，已在上方单测覆盖；奇科(activeBossFor)/佩尔科(onShopEnter)有专项单测
+  const AUDIT_EXEMPT = new Set(["four_fingers", "shortcut", "splash", "blueprint", "hiker", "chicot", "perkeo"]);
   for (const def of JOKER_DEFS) {
     if (AUDIT_EXEMPT.has(def.id)) { pass++; continue; }
     if (!SCEN[def.id]) { fail++; console.error("FAIL 缺少触发审计场景:", def.id); continue; }

@@ -6,7 +6,7 @@
 "use strict";
 
 /* 版本号：与 sw.js 的 CACHE("joker-" + 版本) 保持一致，由测试强制校验 */
-const GAME_VERSION = "1.1.0";
+const GAME_VERSION = "1.2.0";
 
 /* ---------- 扑克常量 ---------- */
 const SUITS = ["♠", "♥", "♣", "♦"];
@@ -272,6 +272,30 @@ const JOKER_DEFS = [
     after: (s, g, j) => ({ xmult: 1 + (j.state || 0) }),
     stateText: j => `×${(1 + (j.state || 0)).toFixed(1)}`,
     onDiscard: (cards, g, j) => { j.state = (j.state || 0) + cards.filter(c => ["J", "Q", "K"].includes(c.rank)).length * 0.5; } },
+  { id: "triboulet", icon: "🤹", rarity: "legendary", cost: 18,
+    name: { zh: "特里布莱", en: "Triboulet" },
+    desc: { zh: "打出的每张 K 和 Q ×2 倍率", en: "Each played King or Queen gives ×2 Mult" },
+    perCard: c => c.rank === "K" || c.rank === "Q" ? { xmult: 2 } : null },
+  { id: "yorick", icon: "💀", rarity: "legendary", cost: 15,
+    name: { zh: "约里克", en: "Yorick" },
+    desc: { zh: "×1 倍率，每累计弃掉 15 张牌永久 ×1", en: "×1 Mult, gains ×1 permanently per 15 cards discarded" },
+    after: (s, g, j) => ({ xmult: 1 + Math.floor((j.state || 0) / 15) }),
+    stateText: j => `×${1 + Math.floor((j.state || 0) / 15)} (${(j.state || 0) % 15}/15)`,
+    onDiscard: (cards, g, j) => { j.state = (j.state || 0) + cards.length; } },
+  /* 效果实现在 engine.activeBossFor：Boss 盲注开始时若在场则 currentBoss 置空 */
+  { id: "chicot", icon: "🤡", rarity: "legendary", cost: 16,
+    name: { zh: "奇科", en: "Chicot" },
+    desc: { zh: "Boss 盲注的负面效果失效", en: "Disables every Boss Blind effect" } },
+  { id: "perkeo", icon: "🍷", rarity: "legendary", cost: 14,
+    name: { zh: "佩尔科", en: "Perkeo" },
+    desc: { zh: "进入商店时，若消耗品有空位，复制一张手中随机消耗品", en: "Duplicates a random held consumable when entering the shop, if a slot is free" },
+    onShopEnter: g => {
+      if (!g.consumables.length || g.consumables.length >= g.maxConsumables) return null;
+      const src = g.consumables[Math.floor(rng() * g.consumables.length)];
+      const def = consumableDef(src.id);
+      g.consumables.push({ id: src.id, uid: "t" + Date.now() + Math.random().toString(36).slice(2, 5) });
+      return S("msg_perkeo_copy", `${def.icon} ${L(def.name)}`);
+    } },
 
   /* --- 重触发类: retrigger(card, ctx, g, j) 返回额外触发次数 --- */
   { id: "hack", icon: "💻", rarity: "uncommon", cost: 6,

@@ -52,6 +52,7 @@ function compileGame() {
     SPECTRALS, SPECTRAL_BY_ID, SKIP_TAGS, HELP_PAGES, consumableDef, sellJoker, shareLink,
     ACHIEVEMENTS, awardAchievement, fmt, BALANCE, GAME_VERSION, MODES, weekSeed, todaySeed, runMaxAnte, blindReward, markSeen, parkCurrentSave, hasParkedSave, restoreParkedSave,
     saveGame, loadGame, useConsumable, applyCardMod, pickBoss, openPack, choosePackOption, skipPack,
+    openShop, activeBossFor,
     loadStats, recordGameEnd, markJokersSeen, RANK_VAL, HAND_TYPES, ANTE_BASE,
     ENH_CHIPS, ENH_MULT, ENH_STEEL_X, S, L };`;
   const M = require("module");

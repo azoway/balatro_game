@@ -241,7 +241,7 @@ function loadGame() {
         maxHands: d.mid.maxHands ?? 4, maxDiscards: d.mid.maxDiscards ?? 3,
         sortMode: d.mid.sortMode || "rank",
       });
-      G.currentBoss = G.blindIndex === 2 ? G.boss : null;
+      G.currentBoss = activeBossFor(G);   // 含奇科禁用与 Boss Rush（旧写法回合中读档会丢 Boss Rush 减益）
       $("blind-select").classList.add("hidden");
       $("shop").classList.add("hidden");
       render();
@@ -304,6 +304,14 @@ function pickBoss() {
   if (!pool.length) { G.seenBosses = []; pool = BOSSES; }
   G.boss = rnd(pool);
   G.seenBosses.push(G.boss.id);
+}
+
+/* 当前盲注实际生效的 Boss：非 Boss 盲注为 null；持有奇科时 Boss 效果失效。
+   startBlind 与回合中读档都经此计算 currentBoss。 */
+function activeBossFor(g = G) {
+  if (!(g.mode === "boss_rush" || g.blindIndex === 2)) return null;
+  if (g.jokers.some(j => j.id === "chicot")) return null;
+  return g.boss;
 }
 
 /* ---------- 牌库 ----------

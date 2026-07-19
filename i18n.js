@@ -114,6 +114,10 @@ const STR = {
   msg_handsize_up:   { zh: "手牌上限 {0}", en: "Hand size {0}" },
   msg_free_reroll:   { zh: "下次商店可免费刷新 1 次", en: "Next shop reroll is free" },
 
+  /* 传奇小丑 */
+  msg_chicot_disable:{ zh: "🤡 奇科：{0} 的效果已失效", en: "🤡 Chicot: {0} effect disabled" },
+  msg_perkeo_copy:   { zh: "🍷 佩尔科复制了 {0}", en: "🍷 Perkeo duplicated {0}" },
+
   /* 计分特效 */
   again_word:        { zh: "↻ 再次触发!", en: "↻ Again!" },
 

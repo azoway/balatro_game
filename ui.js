@@ -78,7 +78,7 @@ function startBlind(idx) {
   // Boss Rush: 每个盲注都换一个新 Boss 并生效其减益（目标倍率仍按盲注位置）
   // 小盲/大盲选新 Boss 会覆盖底注开局那次 pickBoss，因此 Boss 盲注也要重新选
   if (G.mode === "boss_rush") pickBoss();
-  G.currentBoss = (G.mode === "boss_rush" || idx === 2) ? G.boss : null;
+  G.currentBoss = activeBossFor(G);
   G.round++;
   G.roundScore = 0;
   G.target = blindTarget(idx);
@@ -92,7 +92,12 @@ function startBlind(idx) {
     if (G.currentBoss.id === "manacle") handSize -= 1;
     if (G.currentBoss.id === "water") G.maxDiscards = 0;
     if (G.currentBoss.id === "needle") G.maxHands = 1;
-  } else AudioFX.play();
+  } else {
+    // Boss 盲注但 currentBoss 为空 = 被奇科禁用
+    if ((G.mode === "boss_rush" || idx === 2) && G.boss)
+      flashMessage(S("msg_chicot_disable", `${G.boss.icon} ${L(G.boss.name)}`));
+    AudioFX.play();
+  }
   G.handsLeft = G.maxHands;
   G.discardsLeft = G.maxDiscards;
   G.roundDiscards = 0;
@@ -463,11 +468,18 @@ async function winRound() {
 
 function openShop() {
   G.state = "shop";
+  // onShopEnter 钩子（佩尔科复制消耗品），返回本地化消息则提示；随后存档避免刷新丢失
+  for (const j of G.jokers) {
+    const def = JOKER_BY_ID.get(j.id);
+    const msg = def?.onShopEnter && def.onShopEnter(G, j);
+    if (msg) flashMessage(msg);
+  }
   G.rerollCost = G.vouchers.includes("clearance") ? BALANCE.rerollClearance : BALANCE.rerollBase;
   rollShop();
   renderShop();
   $("shop").classList.remove("hidden");
   render();
+  saveGame();
   tipOnce("shop", "tip_shop");
 }
 

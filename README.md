@@ -6,7 +6,7 @@ Balatro 风格的纯前端网页卡牌游戏，无任何依赖，打开 `index.h
 
 ![对局截图 / Gameplay](screenshot.png)
 
-> **English**: A Balatro-style roguelike deckbuilder in pure vanilla JS — zero dependencies, zero build step, just open `index.html`. Full English UI (toggle in the sidebar). Features: 12 poker hands incl. hidden ones, 50 Jokers across 6 mechanic classes (retriggers, scaling, held-in-hand, rule-benders, Blueprint copying, card growth), editions, tarot/spectral consumables that permanently sculpt your deck, booster packs, vouchers, 14 boss blinds, 5 starting decks, endless mode, daily runs, seeded share links (`?seed=…&deck=…`), achievements, collection & run history, offline PWA. Dev: `node test/test.js` (245 assertions incl. bot-driven full-run sims), `node test/balance.js` (win-rate / death-ante reports), `python3 test/e2e.py` (browser E2E).
+> **English**: A Balatro-style roguelike deckbuilder in pure vanilla JS — zero dependencies, zero build step, just open `index.html`. Full English UI (toggle in the sidebar). Features: 12 poker hands incl. hidden ones, 54 Jokers across 6 mechanic classes (retriggers, scaling, held-in-hand, rule-benders, Blueprint copying, card growth) incl. 5 Legendaries, editions, tarot/spectral consumables that permanently sculpt your deck, booster packs, vouchers, 14 boss blinds, 5 starting decks, endless mode, daily runs, seeded share links (`?seed=…&deck=…`), achievements, collection & run history, offline PWA. Dev: `node test/test.js` (245 assertions incl. bot-driven full-run sims), `node test/balance.js` (win-rate / death-ante reports), `python3 test/e2e.py` (browser E2E).
 
 ## 玩法
 
@@ -16,7 +16,7 @@ Balatro 风格的纯前端网页卡牌游戏，无任何依赖，打开 `index.h
 - 12 种牌型：标准 10 种之上还有隐藏牌型**五条**（120×12）和**同花葫芦**（140×14）——只有用塔罗改造牌库才可能打出；12 张星球牌一一对应
 - 每个底注需依次击败小盲注 / 大盲注 / Boss 盲注（14 种 Boss 减益：禁花色/人头、基础值减半、限制补牌、随机禁用小丑等，同局不重复）；共 8 个底注，通关后可进入无尽模式
 - 跳过小盲/大盲换随机标签（7 种：金钱/免费刷新/牌型升级/白嫖小丑/优惠券折扣/投资/加倍）；商店塔罗位偶尔出现高风险的幻灵牌（销毁换钱、随机增强、复制牌、直接获得传奇小丑）
-- 50 张小丑牌，机制包括：逐卡加成、重触发（黑客/悲喜面具/黄昏）、成长型（绿色小丑/坐公交/冰淇淋/方形/闪卡）、**持有触发**（男爵/射月/高举拳头按留在手中的牌生效）、**牌型规则改写**（四指: 4张成同花顺子；抄近路: 顺子可跳点；飞溅: 全牌计分）、**蓝图**（复制右侧小丑）、**徒步者**（计分牌永久+5筹码，写入整局牌库）；商店小丑随机附带版本（闪箔 +50 筹码 / 全息 +10 倍率 / 多彩 ×1.5 倍率）
+- 54 张小丑牌（含 5 张传奇：卡尼奥/特里布莱/约里克/奇科/佩尔科），机制包括：逐卡加成、重触发（黑客/悲喜面具/黄昏）、成长型（绿色小丑/坐公交/冰淇淋/方形/闪卡）、**持有触发**（男爵/射月/高举拳头按留在手中的牌生效）、**牌型规则改写**（四指: 4张成同花顺子；抄近路: 顺子可跳点；飞溅: 全牌计分）、**蓝图**（复制右侧小丑）、**徒步者**（计分牌永久+5筹码，写入整局牌库）；商店小丑随机附带版本（闪箔 +50 筹码 / 全息 +10 倍率 / 多彩 ×1.5 倍率）
 - 回合胜利后进入商店：小丑牌（可用 ◀▶ 调整结算顺序）、星球牌（升级牌型）、塔罗牌（消耗品）、卡包（3 选 1）、优惠券（永久升级：槽位 / 刷新费 / 利息上限等，每种每局限购一次）
 - 塔罗牌分两类：即时型（金钱翻倍、出牌/弃牌/手牌上限 +1 等）和目标型（回合中选中手牌后使用：改花色、点数 +1、附加增强、销毁牌）
 - 卡牌增强 4 种：加成牌（+30 筹码）、倍率牌（+4 倍率）、钢铁牌（留在手中 ×1.5 倍率）、黄金牌（回合结束在手中 +$3）
